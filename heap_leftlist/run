@@ -1,0 +1,1 @@
+ocamlfind ocamlopt msigs.ml  mheap.ml mheap_leftlist.ml iheaplist.ml test1.ml -o heap_leftlist -package ezjsonm,irmin-unix,irmin-http,lwt.unix -linkpkg -thread

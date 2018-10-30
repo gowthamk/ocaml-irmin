@@ -1,0 +1,1 @@
+ocamlfind ocamlopt set_imp.ml iset.ml set_test1.ml -o map_avl -package ezjsonm,irmin-unix,irmin-http,lwt.unix -linkpkg -thread
