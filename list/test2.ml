@@ -6,8 +6,6 @@ module U = struct
   let string_of_list f l = "[ " ^ List.fold_left (fun a b -> a ^ (f b) ^ "; ") "" l ^ "]"
   let print_header h = Printf.printf "%s" ("\n" ^ h ^ "\n")
 end 
-
-(* Set - AVL Tree *)
 let _ =
   U.print_header "List";
 let module MkConfig (Vars: sig val root: string end) : Ilist.Config = struct

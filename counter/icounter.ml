@@ -19,11 +19,6 @@ module MakeVersioned (Config: Config)  = struct
   type vt = int64 
 
 
-  (* M is a structure with module AO_value 
-   * AO_value is a structure with type t which is equal to vt 
-   * node is a record type defined using record type in Irmin.Type
-   * sealr is used to close the open record 
-   * t is a function which includes the variant type *)
   module M = struct
     module AO_value = struct
       type t = int64

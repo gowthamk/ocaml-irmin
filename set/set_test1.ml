@@ -39,15 +39,14 @@ let thread2_f : unit Vpst.t =
   Vpst.get_latest_version () >>= fun c0 -> 
   (* Thread2 adds 40 and 60 *)
   let c0' = c0 |> (MInit.OM.add (Int64.of_int 40)) |> (MInit.OM.add (Int64.of_int 60)) in
-  (* Thread2 syncs with master. Observes no changes. *)
+  (* Thread2 syncs with master. *)
   Vpst.sync_next_version ~v:c0' >>= fun c1 ->
   (* Thread2 blocks for 0.5s *)
   Vpst.liftLwt @@ Lwt_unix.sleep 0.5 >>= fun () ->
-  (* Thread2 decrements by 9. *)
+  (* Thread2 adds 10. *)
   let c1' = c1 |> (MInit.OM.remove (Int64.of_int 10))  in 
   Vpst.sync_next_version ~v:c1' >>= fun c2 ->
   let _ = Printf.printf "merged : %s\n" (U.string_of_list IntAtom.to_string (MInit.OM.elements c2)) in 
-  (*let _ = (M.print_set print_int64 c2) in*)
   Vpst.return ()  in 
 
 
@@ -57,26 +56,23 @@ let thread2_f : unit Vpst.t =
   Vpst.fork_version thread2_f >>= fun () ->
   (* Thread1 blocks for 0.1s *)
   Vpst.liftLwt @@ Lwt_unix.sleep 0.1 >>= fun () ->
-  (* Increments the counter twice - by 2 and 3, resp. *)
+  (* Adds 4, 3 and 2 *)
   let c0' = c0 |> (MInit.OM.add (Int64.of_int 4)) |> (MInit.OM.add (Int64.of_int 3)) |> (MInit.OM.add (Int64.of_int 2))  in
   Vpst.sync_next_version ~v:c0' >>= fun c1 ->
-  (* Thread1 blocks on some operation *)
   Vpst.liftLwt @@ Lwt_unix.sleep 0.1 >>= fun () ->
-  (* Decrements by 4. *)
+  (* Adds 1 *)
   let c1' = c1 |> (MInit.OM.add (Int64.of_int 1)) in
-  (* Syncs with the master again. Publishes 11. *)
+  (* Syncs with the master again. *)
   Vpst.sync_next_version ~v:c1' >>= fun c2 ->
-  (*let _ = Printf.printf "thread1: %d\n" c2 in*)
   let _ = Printf.printf "merged : %s\n" (U.string_of_list IntAtom.to_string (MInit.OM.elements c2)) in 
   Vpst.liftLwt @@ Lwt_unix.sleep 1.1 >>= fun () ->
   Vpst.sync_next_version ~v:c2 >>= fun c3->
   let _ = Printf.printf "merged : %s\n" (U.string_of_list IntAtom.to_string (MInit.OM.elements c3)) in 
-  (*let _ = Printf.printf "thread1 (before exiting): %d\n" c3 in*)
   Vpst.return ()   in 
 
   let main () =
    (*
-    * thread1 starts with a blank canvas.
+    * thread1 starts with the following set denoted by original.
     *)
    let original = MInit.OM.empty |> MInit.OM.add (Int64.of_int 10) |> MInit.OM.add (Int64.of_int 5) |> MInit.OM.add (Int64.of_int 20) in
    Vpst.with_init_version_do original thread1_f in 

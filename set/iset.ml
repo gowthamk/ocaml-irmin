@@ -56,8 +56,8 @@ module MakeVersioned (Config: Config) (Atom: Set_imp.ATOM) = struct
 
       let pp = Irmin.Type.dump t
       
-      (* why of_string is defined? *)
       (* It converts the string back to our type *)
+      (* Here string is used for serialization *)
       let of_string (s:string) =
         let from_just_ok = function (Ok x) -> x
                                   | _ -> failwith "Expected Ok. Got error." in

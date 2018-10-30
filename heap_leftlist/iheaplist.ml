@@ -23,11 +23,7 @@ module MakeVersioned (Config: Config) (Atom: Mheap_leftlist.ATOM) = struct
     | E 
     | T of vnode
 
-  (* M is a structure with module AO_value 
-   * AO_value is a structure with type t which is equal to vt 
-   * node is a record type defined using record type in Irmin.Type
-   * sealr is used to close the open record 
-   * t is a function which includes the variant type *)
+
   module M = struct
     module AO_value = struct
       type t = vt
@@ -92,12 +88,7 @@ module MakeVersioned (Config: Config) (Atom: Mheap_leftlist.ATOM) = struct
 
     type t = K.t
      
-    (* returns the Irmin data type *) 
-    (* aostore is created using the create function *)
-    (* function aostore_add adds the value to the store *)
-    (* Value a is matched against the different constructor of the set data type *)
-    (* If the set data type is Empty then the thread returns Empty *)
-    (* If the set data type is Node then of_adt is applied to left and right node *)
+
    let rec of_adt (a:OM.t) : t Lwt.t  =
       let aostore = AO_store.create () in
       let aostore_add value =
@@ -111,9 +102,7 @@ module MakeVersioned (Config: Config) (Atom: Mheap_leftlist.ATOM) = struct
           Lwt.return {ra=Int64.of_int ra; d; l=l'; r=r'})
          >>= ((fun n -> Lwt.return @@ (T n))))
     
-    (* returns the basic OCaml data type *)
-    (* for the key k we find the data stored with that key using the function find *)
-    (* Then t is matched with type defined in the AO_value *)
+
     let rec to_adt (k:t) : OM.t Lwt.t =
       AO_store.create () >>= fun ao_store ->
       AO_store.find ao_store k >>= fun t ->
@@ -132,9 +121,7 @@ module MakeVersioned (Config: Config) (Atom: Mheap_leftlist.ATOM) = struct
 
     let of_string = K.of_string
  
-    (* merge function merges old, v1_k and v2_k *)
-    (* Irmin.Merge.promise t is a promise containing a value of type t *)
-    (* using the to_adt, old_k, v1_k and v2_k is converted to the OCaml data type *)
+
     let rec merge ~(old:t Irmin.Merge.promise) v1_k v2_k =
       let open Irmin.Merge.Infix in
       old () >>=* fun old_k ->

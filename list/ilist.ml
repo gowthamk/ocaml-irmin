@@ -19,11 +19,6 @@ module MakeVersioned (Config: Config) (Atom: Mvector_list.ATOM) = struct
   
   type vt = OM.atom list
 
-  (* M is a structure with module AO_value 
-   * AO_value is a structure with type t which is equal to vt 
-   * node is a record type defined using record type in Irmin.Type
-   * sealr is used to close the open record 
-   * t is a function which includes the variant type *)
   module M = struct
     module AO_value  = struct
       
@@ -31,15 +26,11 @@ module MakeVersioned (Config: Config) (Atom: Mvector_list.ATOM) = struct
 
       let t = Irmin.Type.(list Atom.t)
 
-       let pp = Irmin.Type.pp_json t
+      let pp = Irmin.Type.pp_json t
 
-
-      
-      (* why of_string is defined? *)
-      (* It converts the string back to our type *)
-        let of_string s =
-        let decoder = Jsonm.decoder (`String s) in
-        Irmin.Type.decode_json (t) decoder
+      let of_string s =
+      let decoder = Jsonm.decoder (`String s) in
+      Irmin.Type.decode_json (t) decoder
     end
     
     (* storage backhend: Append-only store *)

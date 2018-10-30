@@ -16,7 +16,7 @@ module MakeVersioned (Config: Config)  = struct
   let from_just = function (Some x) -> x
   | None -> failwith "Expected Some. Got None."
 
-  (* pixel is a record type which consist of parameters r, g and b where all of them are of char type *)
+  (* vpixel is a record type which consist of parameters r, g and b where all of them are of char type *)
   type vpixel = {r:char; g:char; b:char}
 
   type vnode = {tl_t:K.t; tr_t:K.t; bl_t:K.t; br_t:K.t}
@@ -27,11 +27,6 @@ module MakeVersioned (Config: Config)  = struct
    | B of vnode
   
 
-  (* M is a structure with module AO_value 
-   * AO_value is a structure with type t which is equal to vt 
-   * node is a record type defined using record type in Irmin.Type
-   * sealr is used to close the open record 
-   * t is a function which includes the variant type *)
   module M = struct
     module AO_value = struct
       type t = vt
@@ -70,28 +65,6 @@ module MakeVersioned (Config: Config)  = struct
         let decoder = Jsonm.decoder (`String s) in
         Irmin.Type.decode_json t decoder
 
-    (*let to_json = let f = Char.code in function
-      | N px -> `A [`String "N"; `O [("r", Irmin.Type.encode_json f (px.r));
-                                     ("g", Tc.Int.to_json @@ f px.g);
-                                     ("b", Tc.Int.to_json @@ f px.b)]] 
-      | B x -> `A [`String "B"; `O [("tl_t", K.to_json x.tl_t);
-                                    ("tr_t", K.to_json x.tr_t);
-                                    ("bl_t", K.to_json x.bl_t);
-                                    ("br_t", K.to_json x.br_t)]]
-    let of_json = function
-      | `A [`String "N"; `O [("r",r); ("g",g); ("b",b)]] -> 
-          let f = Char.chr in 
-            N {r=f @@ Tc.Int.of_json r; 
-               g=f @@ Tc.Int.of_json g;
-               b=f @@ Tc.Int.of_json b}
-      | `A [`String "B"; `O [("tl_t",tl_t); ("tr_t",tr_t); 
-                             ("bl_t",bl_t); ("br_t",br_t)]] -> 
-          let f = K.of_json in
-            B {tl_t= f tl_t; tr_t=f tr_t; bl_t=f bl_t; br_t=f br_t}
-      | j -> Ezjsonm.parse_error j "ICanvas.AO_value.of_json"
-    
-    let to_string t = Ezjsonm.to_string (to_json t)
-    let of_string s = of_json (Ezjsonm.from_string s)*)
     end
     
     (* storage backhend: Append-only store *)

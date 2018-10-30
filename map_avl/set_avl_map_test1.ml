@@ -48,13 +48,9 @@ let (>>=) = Vpst.bind  in
 
 let thread2_f : unit Vpst.t = 
   Vpst.get_latest_version () >>= fun c0 -> 
-  (* Thread2 adds 40 and 60 *)
   let c0' = c0 |> (MInit.OM.add "A" (Int64.of_int 40)) |> (MInit.OM.add "D" (Int64.of_int 60)) in
-  (* Thread2 syncs with master. Observes no changes. *)
   Vpst.sync_next_version ~v:c0' >>= fun c1 ->
-  (* Thread2 blocks for 0.5s *)
   Vpst.liftLwt @@ Lwt_unix.sleep 0.5 >>= fun () ->
-  (* Thread2 decrements by 9. *)
   let c1' = c1 |> (MInit.OM.remove "C")  in 
   Vpst.sync_next_version ~v:c1' >>= fun c2 ->
   MInit.OM.iter (fun k a -> Printf.printf "%s : %s\n" k (IntAtom.to_string a) ) c2
@@ -63,20 +59,13 @@ let thread2_f : unit Vpst.t =
 
  let thread1_f : unit Vpst.t = 
   Vpst.get_latest_version () >>= fun c0 -> 
-  (* Thread1 forks thread2 *)
   Vpst.fork_version thread2_f >>= fun () ->
-  (* Thread1 blocks for 0.1s *)
   Vpst.liftLwt @@ Lwt_unix.sleep 0.1 >>= fun () ->
-  (* Increments the counter twice - by 2 and 3, resp. *)
   let c0' = c0 |> (MInit.OM.add "Z" (Int64.of_int 4)) |> (MInit.OM.add "D" (Int64.of_int 70)) in
   Vpst.sync_next_version ~v:c0' >>= fun c1 ->
-  (* Thread1 blocks on some operation *)
   Vpst.liftLwt @@ Lwt_unix.sleep 0.1 >>= fun () ->
-  (* Decrements by 4. *)
   let c1' = c1 |> (MInit.OM.add (Int64.of_int 1)) in
-  (* Syncs with the master again. Publishes 11. *)
   Vpst.sync_next_version ~v:c1' >>= fun c2 ->
-  (*let _ = Printf.printf "thread1: %d\n" c2 in*)
   let _ = Printf.printf "merged : %s\n" (U.string_of_list IntAtom.to_string (MInit.OM.elements c2)) in 
   Vpst.liftLwt @@ Lwt_unix.sleep 1.1 >>= fun () ->
   Vpst.sync_next_version ~v:c2 >>= fun c3 ->
