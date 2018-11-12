@@ -1,0 +1,1 @@
+ocamlfind ocamlopt graph_imp.ml -o graph -package ezjsonm,irmin-unix,lwt.unix -linkpkg -thread
