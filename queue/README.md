@@ -18,3 +18,12 @@ type edit =
 
 ## Various cases of mergeable queue
 ### case1:
+![Case 1](https://github.com/priyas13/ocaml-irmin/blob/master/queue/case1.png)
+### case2:
+![Case 2](https://github.com/priyas13/ocaml-irmin/blob/master/queue/case2.png)
+### case3:
+![Case 3](https://github.com/priyas13/ocaml-irmin/blob/master/queue/case3.png)
+### case4:
+![Case 4](https://github.com/priyas13/ocaml-irmin/blob/master/queue/case4.png)
+### case5:
+![Case 5](https://github.com/priyas13/ocaml-irmin/blob/master/queue/case5.png)
