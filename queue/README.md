@@ -15,3 +15,6 @@ type edit =
  | Take 
  ```
 * op_transform takes a pair of edit sequences, s1 and s2, that map a queue v to two different queue. v1 and v2, and trasnform s1 to s1' such that s1' has the same effect on v2 as s1 had on v.
+
+## Various cases of mergeable queue
+### case1:
