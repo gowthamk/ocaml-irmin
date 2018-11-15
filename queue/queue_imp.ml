@@ -3,10 +3,10 @@ open Lwt.Infix
 module type ATOM =
 sig 
  type t 
- val t: t Irmin.Type.t
- val compare: t -> t -> int
+ (*val t: t Irmin.Type.t
+ val compare: t -> t -> int*)
  val to_string: t -> string
- val of_string: string -> t
+ (*val of_string: string -> t*)
 end 
 
 module Make (Atom : ATOM) =
@@ -24,6 +24,8 @@ struct
 
  (* create function creates a queue which is initially empty *)
  let create () = {length = 0; first = Nil ; last = Nil}
+
+ let empty = {length = 0; first = Nil ; last = Nil}
  
  (* clear q clears the queue where the length is assigned to 0 and first and last field are 
     assigned Nil  *)
@@ -33,12 +35,8 @@ struct
  let add x q = 
      let cell = Cons {content = x; next = Nil} in 
      match q.last with 
-       | Nil -> q.length <- 1; 
-                q.first <- cell;
-                q.last <- Nil
-       | Cons last -> q.length <- q.length + 1;
-                      last.next <- cell;
-                      q.last <- cell
+       | Nil -> {length = 1; first = cell; last = Nil}
+       | Cons last -> {length = q.length + 1; first = q.first; last = cell}
  (* push represents the push operation which basically pushes an element to the queue *)
  let push = add
 
@@ -61,6 +59,18 @@ struct
     q.length <- q.length - 1;
     q.first <- next;
     content
+
+ (*let rec get q i = 
+   match q.first with 
+   | Nil -> raise Empty 
+   | Cons {content; next = Nil} ->
+     match i with 
+     | 0 -> content 
+     | _ -> 
+   match i with 
+   | 0 -> q.first.content
+   | m -> get q (m -1)*)
+
 
  (* pop pops out the element from the queue *)
  let pop =
@@ -109,6 +119,83 @@ struct
       last.next <- q1.first;
       q2.last <- q1.last;
       clear q1
+
+
+  (* Patching *)
+
+  type edit =
+   | Add of atom 
+   | Take 
+
+
+  type patch = edit list 
+
+  let edit_to_string atom_to_string = function 
+  | Add a -> Printf.sprintf "Add %s" (atom_to_string a)
+  | Take -> Printf.sprintf "Take" 
+
+
+  (*let oo_diff xt yt =
+   let rec diff_que s1 s2 =
+    match (s1, s2) with
+      | ({length=0; first = Nil; last = Nil}, t2) -> fold (fun x y -> y @ [Add x]) t2 []
+      | (t1, {length=0; first = Nil; last = Nil}) -> fold (fun x y -> y @ [Take]) t1 []
+      | ({length=_; first = f1; last = l1}, {length=_; first = f1; last = l1})*)
+
+   (*let op_diff xs ys =
+    let cache = Array.init (length xs+1)
+        (fun _ -> Array.make (length ys+1) None)
+    in
+    let rec loop i j =
+      let cache_i = Array.unsafe_get cache i in
+      let min3 x y z =
+        let m' (a,al) (b,bl) = if a < b then (a,al) else (b,bl) in
+        m' (m' x y) z
+      in
+      match Array.unsafe_get cache_i j with
+      | Some v -> v
+      | None ->
+        let res =
+          begin match i,j with
+            | 0,0 -> (0, [])
+            | 0, j ->
+              let d,e = loop 0 (j-1) in
+              (d+1, (Add (get ys (j-1))::e))
+            | i, 0 ->
+              let d,e = loop (i-1) 0 in
+              (d+1, (Take::e)) *)
+
+ 
+
+ 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
                           
 end 

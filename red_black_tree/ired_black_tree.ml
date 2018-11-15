@@ -14,7 +14,7 @@ module MakeVersioned (Config: Config) (Atom: Red_black_tree_imp.ATOM)= struct
   module K = Irmin.Hash.SHA1
 
 
-let from_just = function (Some x) -> x
+let from_just = function (Some x) -> x 
   | None -> failwith "Expected Some. Got None."
 
 type vcolor = R | B

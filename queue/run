@@ -1,2 +1,2 @@
 
-ocamlfind ocamlopt queue_imp.ml basic_example2.ml -o queue -package ezjsonm,irmin-unix,lwt.unix -linkpkg -thread
+ocamlfind ocamlopt queue_imp.ml basic_example1.ml -o queue -package ezjsonm,irmin-unix,lwt.unix -linkpkg -thread
