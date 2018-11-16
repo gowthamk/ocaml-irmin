@@ -1,4 +1,4 @@
-open Lwt.Infix
+(*open Lwt.Infix*)
 
 module type ATOM =
 sig 
@@ -35,10 +35,29 @@ struct
  let add x q = 
      let cell = Cons {content = x; next = Nil} in 
      match q.last with 
-       | Nil -> {length = 1; first = cell; last = Nil}
-       | Cons last -> {length = q.length + 1; first = q.first; last = cell}
+       | Nil -> {length = 1; first = cell; last = cell}
+       | Cons last -> last.next <- cell; {length = q.length + 1; first = q.first; last = cell}
+
  (* push represents the push operation which basically pushes an element to the queue *)
  let push = add
+
+ let nthq q n = 
+     if n < 0 then invalid_arg "Queue.nthq" else 
+     let rec nthq_aux q n =
+       match q.first with
+       | Nil -> raise Empty
+       | Cons {content; next = Nil} -> if n = 0 then content else invalid_arg "Queue range"
+       | Cons {content; next} -> if n = 0 then content else nthq_aux {length = q.length -1; first = next; last = next} (n-1)
+     in nthq_aux q n 
+
+
+ let get q i = nthq q i
+
+
+
+       (*| empty -> failwith "nthq"
+       | {length = m; first = f; last = l} -> if n = 0 then f else nthq_aux {length = m -1; first=f; last=l} (n-1)
+      in nthq_aux q n *)
 
  (* peek q peeks into the queue q and returns its content which is at the top *)
  let peek q = match q.first with 
@@ -59,18 +78,6 @@ struct
     q.length <- q.length - 1;
     q.first <- next;
     content
-
- (*let rec get q i = 
-   match q.first with 
-   | Nil -> raise Empty 
-   | Cons {content; next = Nil} ->
-     match i with 
-     | 0 -> content 
-     | _ -> 
-   match i with 
-   | 0 -> q.first.content
-   | m -> get q (m -1)*)
-
 
  (* pop pops out the element from the queue *)
  let pop =
@@ -142,7 +149,7 @@ struct
       | (t1, {length=0; first = Nil; last = Nil}) -> fold (fun x y -> y @ [Take]) t1 []
       | ({length=_; first = f1; last = l1}, {length=_; first = f1; last = l1})*)
 
-   (*let op_diff xs ys =
+  (*let op_diff xs ys =
     let cache = Array.init (length xs+1)
         (fun _ -> Array.make (length ys+1) None)
     in
@@ -163,7 +170,7 @@ struct
               (d+1, (Add (get ys (j-1))::e))
             | i, 0 ->
               let d,e = loop (i-1) 0 in
-              (d+1, (Take::e)) *)
+              (d+1, (Take::e))*)
 
  
 

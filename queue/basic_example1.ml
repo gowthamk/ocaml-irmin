@@ -23,7 +23,8 @@ let _ =
   let a = M.empty |> M.add 4 |> M.add 3 |> M.add 2 |> M.add 1  in  
   M.iter (fun x -> print_int x; print_newline()) a;
   print_int (M.length a);
-  print_newline () ;
+  print_newline ();
   print_int (M.take a);
+  print_int (M.nthq a 2);
 
 
