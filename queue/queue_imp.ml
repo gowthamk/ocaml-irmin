@@ -47,17 +47,11 @@ struct
        match q.first with
        | Nil -> raise Empty
        | Cons {content; next = Nil} -> if n = 0 then content else invalid_arg "Queue range"
-       | Cons {content; next} -> if n = 0 then content else nthq_aux {length = q.length -1; first = next; last = next} (n-1)
+       | Cons {content; next} -> if n = 0 then content else nthq_aux {length = q.length - 1; first = next; last = next} (n-1)
      in nthq_aux q n 
 
 
  let get q i = nthq q i
-
-
-
-       (*| empty -> failwith "nthq"
-       | {length = m; first = f; last = l} -> if n = 0 then f else nthq_aux {length = m -1; first=f; last=l} (n-1)
-      in nthq_aux q n *)
 
  (* peek q peeks into the queue q and returns its content which is at the top *)
  let peek q = match q.first with 
@@ -78,6 +72,12 @@ struct
     q.length <- q.length - 1;
     q.first <- next;
     content
+
+  let q_after_take q = 
+    match q.first with 
+    | Nil -> {length=0; first= Nil; last = Nil}
+    | Cons {content; next = Nil} -> {length=0; first= Nil; last = Nil}
+    | Cons {content; next} -> {length = q.length-1; first = next; last = next}
 
  (* pop pops out the element from the queue *)
  let pop =
@@ -141,15 +141,7 @@ struct
   | Add a -> Printf.sprintf "Add %s" (atom_to_string a)
   | Take -> Printf.sprintf "Take" 
 
-
-  (*let oo_diff xt yt =
-   let rec diff_que s1 s2 =
-    match (s1, s2) with
-      | ({length=0; first = Nil; last = Nil}, t2) -> fold (fun x y -> y @ [Add x]) t2 []
-      | (t1, {length=0; first = Nil; last = Nil}) -> fold (fun x y -> y @ [Take]) t1 []
-      | ({length=_; first = f1; last = l1}, {length=_; first = f1; last = l1})*)
-
-  (*let op_diff xs ys =
+  let op_diff xs ys =
     let cache = Array.init (length xs+1)
         (fun _ -> Array.make (length ys+1) None)
     in
@@ -170,39 +162,27 @@ struct
               (d+1, (Add (get ys (j-1))::e))
             | i, 0 ->
               let d,e = loop (i-1) 0 in
-              (d+1, (Take::e))*)
+              (d+1, (Take::e))
+            | _ ->
+              let xsim1 = get xs (i-1) in
+              let ysim1 = get ys (j-1) in
+              let d,e = loop (i-1) j in
+              let r1 = (d+1, Take::e) in
+              let d,e = loop i (j-1) in
+              let r2 = (d+1, Add ysim1::e) in
+              let d,e = loop (i-1) (j-1) in
+              let r3 =
+                if xsim1 = ysim1 then d,e
+                else (d+1, (List.append (let d, e = loop 0 (j-1) in  (Add (get ys (j-1)) :: e)) 
+                                        (let d, e = loop (i-1) 0 in (Take :: e))))
+              in
+              min3 r1 r2 r3
+          end
+        in
+        Array.unsafe_set cache_i j (Some res);
+        res
+    in
+    let _,e = loop (length xs) (length ys) in
+    List.rev e
 
- 
-
- 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-                          
 end 

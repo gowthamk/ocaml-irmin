@@ -6,7 +6,7 @@ end
 
 (* Queue *)
 let _ =
-  U.print_header "Vector - List";
+  U.print_header "Queue";
   let module IntAtom = struct
     type t = int
 
@@ -21,10 +21,13 @@ let _ =
   let module M = Queue_imp.Make(IntAtom) in
 
   let a = M.empty |> M.add 4 |> M.add 3 |> M.add 2 |> M.add 1  in  
-  M.iter (fun x -> print_int x; print_newline()) a;
+  M.iter (fun x -> print_string "|" ; print_int x; print_string "|") (M.q_after_take a);
+  print_newline() ;
   print_int (M.length a);
   print_newline ();
   print_int (M.take a);
-  print_int (M.nthq a 2);
+  print_newline() ;
+  print_int (M.nthq a 0);
+
 
 
