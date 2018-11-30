@@ -12,7 +12,7 @@ let _ =
   U.print_header "Queue";
   let module IntAtom = struct
     type t = int
-
+    let compare = Pervasives.compare
     (* User defined merges for atom values *)
     let resolve x y = '#'
     let merge3 ~ancestor x y = '#'

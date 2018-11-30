@@ -1,10 +1,9 @@
 (*open Lwt.Infix*)
-
 module type ATOM =
 sig 
  type t 
- (*val t: t Irmin.Type.t
- val compare: t -> t -> int*)
+ (*val t: t Irmin.Type.t*)
+ val compare: t -> t -> int
  val to_string: t -> string
  (*val of_string: string -> t*)
 end 
@@ -62,7 +61,7 @@ struct
  let top = peek
  
  (* take takes out the element from the queue in the FIFO order *) 
- let take q = 
+ let take q =
   match q.first with
   | Nil -> raise Empty
   | Cons { content; next = Nil } ->
@@ -127,19 +126,34 @@ struct
       q2.last <- q1.last;
       clear q1
 
+  module type S = sig
+  (* Patching *)
+  type edit = 
+    | Add of atom 
+   | Take 
+
+  include Msigs.PATCHABLE with type t := t and type edit := edit
+
+  (* Merging *)
+  include Msigs.MERGEABLE with type t := t
+end
 
   (* Patching *)
 
   type edit =
    | Add of atom 
-   | Take 
+   | Take of atom 
 
 
   type patch = edit list 
 
   let edit_to_string atom_to_string = function 
   | Add a -> Printf.sprintf "Add %s" (atom_to_string a)
-  | Take -> Printf.sprintf "Take" 
+  | Take a -> Printf.sprintf "Take %s" (atom_to_string a) 
+
+  let get_edit_atom e = match e with 
+  | Add nx -> nx 
+  | Take nx -> nx
 
   let op_diff xs ys =
     let cache = Array.init (length xs+1)
@@ -162,19 +176,19 @@ struct
               (d+1, (Add (get ys (j-1))::e))
             | i, 0 ->
               let d,e = loop (i-1) 0 in
-              (d+1, (Take::e))
+              (d+1, (Take (get xs (i-1))::e))
             | _ ->
               let xsim1 = get xs (i-1) in
               let ysim1 = get ys (j-1) in
               let d,e = loop (i-1) j in
-              let r1 = (d+1, Take::e) in
+              let r1 = (d+1, Take xsim1 ::e) in
               let d,e = loop i (j-1) in
-              let r2 = (d+1, Add ysim1::e) in
+              let r2 = (d+1, Add ysim1 ::e) in
               let d,e = loop (i-1) (j-1) in
               let r3 =
-                if xsim1 = ysim1 then d,e
+                if xsim1 = ysim1 then (d,e)
                 else (d+1, (List.append (let d, e = loop 0 (j-1) in  (Add (get ys (j-1)) :: e)) 
-                                        (let d, e = loop (i-1) 0 in (Take :: e))))
+                                        (let d, e = loop (i-1) 0 in (Take (get xs (i-1)) :: e))))
               in
               min3 r1 r2 r3
           end
@@ -184,5 +198,89 @@ struct
     in
     let _,e = loop (length xs) (length ys) in
     List.rev e
+
+   let rec shift_patch acc o = function
+    | [] -> List.rev acc
+    | e::tl -> shift_patch (e::acc) o tl
+
+
+   let offset = function
+    | Add _ -> 1
+    | Take _ -> -1
+
+    (* take_all gives us the list of take edits needed to empty the queue *)
+    let rec take_all x = match x with 
+    | [] -> []
+    | e::tl -> Take (get_edit_atom e) :: take_all tl
+
+  (* calculates the operation transform between two edit sequences *)
+  let rec diff_edit x y = match (x,y) with 
+    | [],[] -> []
+    | xs , [] -> xs
+    | [], ys -> ys 
+    | Add nx :: xs, Add ny :: ys -> let c = Atom.compare nx ny in 
+                                    if c < 0 then Add nx :: Add ny :: diff_edit xs ys 
+                                    else if c = 0 then Add nx :: (diff_edit xs ys)
+                                    else  Add ny :: Add nx :: diff_edit xs ys 
+    | Take nx :: xs, Take ny :: ys -> Take nx :: (diff_edit xs ys)
+    | x', y' when x' = y' -> []
+    | Add nx :: xs, Take ny :: ys -> (Add nx :: diff_edit xs ys) 
+    | Take nx :: xs, Add ny :: ys -> (Take nx :: diff_edit [] xs)
+
+  let diff_append p q = match p, q with 
+  | [], [] -> ([], [])
+  | xs, [] -> (xs, [])
+  | [], ys -> ([], ys)
+  | x :: xs, y :: ys -> ((List.append 
+                (take_all (y :: ys))
+                (diff_edit (x :: xs) (y :: ys))), 
+                (List.append 
+                (take_all (x :: xs))
+                (diff_edit (x :: xs) (y :: ys))))
+
+ 
+  let op_transform p q =
+    let rec go xs a ys b =
+      match xs, a, ys, b with
+      | [], _, [], _ -> ([], [])
+      | xs, a, [], _ -> (shift_patch [] a xs, [])
+      | [], _, ys, b -> ([], shift_patch [] b ys)
+      | p',_ , q', _ when p'= q' -> ([], []) 
+      | Add nx :: [], a, Add ny :: ys, b when nx = ny -> ([], diff_edit [] ys)
+      | Take nx :: Take ny :: xs, a, Take ny' :: [], b -> ([], (Add ny :: diff_edit [] xs))
+      | Add nx :: xs, a, Take ny :: ys, b -> ((Take nx :: Add ny :: Add nx :: Add nx :: diff_edit xs ys), (diff_edit xs ys))
+      | Take nx :: xs, a, Add ny :: ys, b -> ((diff_edit xs ys), (Take ny :: Add nx :: Add ny :: Add ny :: diff_edit xs ys))
+      | x::xs, a, y::ys, b ->
+        begin
+          match x,y with
+          | Add nx, Add ny  when nx = ny -> 
+             (diff_append (x :: xs) (y :: ys)) (*(go xs (a + offset y) ys (b + offset x))*)
+          | Add (nx), Add (ny) -> 
+              diff_append (x :: xs) (y :: ys)
+         | Add _, Take _ ->
+             diff_append (x :: xs) (y :: ys)
+          | Take _, Add _ ->
+             diff_append (x :: xs) (y :: ys)
+          | Take _, Take _ -> ((diff_edit (x :: xs) (y :: ys)), (diff_edit (x :: xs) (y :: ys))) 
+        end
+    in
+    go p 0 q 0
+
+   let rec apply s = function
+    | [] -> s
+    | Add(c)::tl ->
+      let s' = ((add c) s) in
+      apply s' tl
+    | Take(c)::tl ->
+      let s' = (q_after_take s)  in
+      (apply s' tl)
+
+  let merge3 ~ancestor l r =
+    let p = op_diff ancestor l in
+    let q = op_diff ancestor r in
+    let _,q' = op_transform p q in
+    apply l q'
+
+
 
 end 

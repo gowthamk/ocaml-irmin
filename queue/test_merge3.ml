@@ -9,7 +9,7 @@ end
 
 (* Queue *)
 let _ =
-  U.print_header "Queue";
+  U.print_header "Queue3";
   let module IntAtom = struct
     type t = int
     let compare = Pervasives.compare
@@ -31,8 +31,14 @@ let _ =
   (* edit seq generation with diff *)
   let p = M.op_diff original q1 in
   let q = M.op_diff original q2 in
-    Printf.printf "p = diff original v1: %s\n" (edit_seq_printer p);
-    Printf.printf "q = diff original v2: %s\n" (edit_seq_printer q);;
+  let _ =Printf.printf "p = diff original v1: %s\n" (edit_seq_printer p);
+    Printf.printf "q = diff original v2: %s\n" (edit_seq_printer q) in
+  let p', q' = M.op_transform p q in
+  let _ = 
+    Printf.printf "p' = transformed p: %s\n" (edit_seq_printer p');
+    Printf.printf "q' = transformed q: %s\n" (edit_seq_printer q') in 
+          let m = M.merge3 ~ancestor:original q1 q2 in 
+  M.iter (fun x -> print_string "|" ; print_int x; print_string "|") (m)
 
 
 

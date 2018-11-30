@@ -11,9 +11,9 @@ let _ =
     type t = int
 
     (* User defined merges for atom values *)
-    let resolve x y = '#'
-    let merge3 ~ancestor x y = '#'
-
+    let resolve x y = 0
+    let merge3 ~ancestor x y = 0
+    let compare = Pervasives.compare
     (* Used for presentation purposes *)
     let to_string = string_of_int
   end in
