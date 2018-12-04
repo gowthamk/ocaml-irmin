@@ -12,18 +12,8 @@ The merge operation for queue is composed of two separate functions, edit_seq an
 ```
 type edit =
  | Add of atom
- | Take 
+ | Take of atom
  ```
 * op_transform takes a pair of edit sequences, s1 and s2, that map a queue v to two different queue. v1 and v2, and trasnform s1 to s1' such that s1' has the same effect on v2 as s1 had on v.
 
-## Various cases of mergeable queue
-### case1:
-![Case 1](https://github.com/priyas13/ocaml-irmin/blob/master/queue/case1.png)
-### case2:
-![Case 2](https://github.com/priyas13/ocaml-irmin/blob/master/queue/case2.png)
-### case3:
-![Case 3](https://github.com/priyas13/ocaml-irmin/blob/master/queue/case3.png)
-### case4:
-![Case 4](https://github.com/priyas13/ocaml-irmin/blob/master/queue/case4.png)
-### case5:
-![Case 5](https://github.com/priyas13/ocaml-irmin/blob/master/queue/case5.png)
+
