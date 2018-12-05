@@ -21,10 +21,10 @@ struct
 
  type t = {mutable length: int; mutable first: cell; mutable last: cell}
 
+ let empty = {length=0; first = Nil; last= Nil}
+
  (* create function creates a queue which is initially empty *)
  let create () = {length = 0; first = Nil ; last = Nil}
-
- let empty = {length = 0; first = Nil ; last = Nil}
  
  (* clear q clears the queue where the length is assigned to 0 and first and last field are 
     assigned Nil  *)
@@ -78,6 +78,8 @@ struct
     | Cons {content; next = Nil} -> {length=0; first= Nil; last = Nil}
     | Cons {content; next} -> {length = q.length-1; first = next; last = next}
 
+    let rec equal_q q1 q2 = if ((get q1 0) = (get q2 0)) then equal_q (q_after_take q1) (q_after_take q2) else false
+
  (* pop pops out the element from the queue *)
  let pop =
   take
@@ -130,7 +132,7 @@ struct
   (* Patching *)
   type edit = 
     | Add of atom 
-   | Take 
+    | Take of atom
 
   include Msigs.PATCHABLE with type t := t and type edit := edit
 
@@ -155,53 +157,51 @@ end
   | Add nx -> nx 
   | Take nx -> nx
 
-  let op_diff xs ys =
-    let cache = Array.init (length xs+1)
-        (fun _ -> Array.make (length ys+1) None)
-    in
-    let rec loop i j =
-      let cache_i = Array.unsafe_get cache i in
-      let min3 x y z =
-        let m' (a,al) (b,bl) = if a < b then (a,al) else (b,bl) in
-        m' (m' x y) z
-      in
-      match Array.unsafe_get cache_i j with
-      | Some v -> v
-      | None ->
-        let res =
-          begin match i,j with
-            | 0,0 -> (0, [])
-            | 0, j ->
-              let d,e = loop 0 (j-1) in
-              (d+1, (Add (get ys (j-1))::e))
-            | i, 0 ->
-              let d,e = loop (i-1) 0 in
-              (d+1, (Take (get xs (i-1))::e))
-            | _ ->
-              let xsim1 = get xs (i-1) in
-              let ysim1 = get ys (j-1) in
-              let d,e = loop (i-1) j in
-              let r1 = (d+1, Take xsim1 ::e) in
-              let d,e = loop i (j-1) in
-              let r2 = (d+1, Add ysim1 ::e) in
-              let d,e = loop (i-1) (j-1) in
-              let r3 =
-                if xsim1 = ysim1 then (d,e)
-                else (d+1, (List.append (let d, e = loop 0 (j-1) in  (Add (get ys (j-1)) :: e)) 
-                                        (let d, e = loop (i-1) 0 in (Take (get xs (i-1)) :: e))))
-              in
-              min3 r1 r2 r3
-          end
-        in
-        Array.unsafe_set cache_i j (Some res);
-        res
-    in
-    let _,e = loop (length xs) (length ys) in
-    List.rev e
 
-   let rec shift_patch acc o = function
+    let rec delete (x:edit) (l: edit list) = match l with 
+    | [] -> []
+    | y :: l' -> if x = y then l' else y :: delete x l'
+
+
+  let rec take_upto_index i q = if i = 0 then q_after_take q else (take_upto_index (i-1) (q_after_take q))
+
+  let rec compare_till_index i q1 q2 = if i = 0 then (if ((get q1 0) = (get q2 0)) then true else false) else compare_till_index (i-1) (q1) (q2)
+
+  let rec compare_q q1 q2 = match (q1, q2) with 
+  | ({length=0;first=Nil; last=Nil}, {length=0;first=Nil; last=Nil}) -> true 
+  |({length=0;first=Nil; last=Nil}, ys ) -> false
+  | (xs, {length=0;first=Nil; last=Nil}) -> false
+  | (xs, ys) -> if ((get xs 0) = (get ys 0)) then compare_q (q_after_take xs) (q_after_take ys) else false
+
+
+  let rec op_diff xt yt =
+   let rec diff_avlt s1 s2 =
+      match (s1, s2) with
+      | ({length=0;first=Nil; last=Nil}, {length=0;first=Nil; last=Nil} ) -> []
+      | (xs, {length=0;first=Nil; last=Nil}) -> Take (get xs 0) :: (diff_avlt (q_after_take xs) {length=0;first=Nil; last=Nil})
+      | ({length=0;first=Nil; last=Nil}, ys) -> Add (get ys 0) :: (diff_avlt {length=0;first=Nil; last=Nil} (q_after_take ys))
+      | (xs, ys) -> let c = compare (length xs) (length ys) in  
+                   if c > 0 then
+                    (if (compare_till_index (length ys - 1) xs ys) 
+                     then (List.append (Take (get xs 0) :: (diff_avlt (q_after_take xs) {length=0;first=Nil; last=Nil})) 
+                          (Add (get ys 0) :: diff_avlt {length=0;first=Nil; last=Nil} (q_after_take ys)))
+                     else (Take (get xs 0) :: diff_avlt (q_after_take xs) (ys)))
+                  else if c = 0 then 
+                      (if (compare_q xs ys) then []
+                        else (List.append (Take (get xs 0) :: (diff_avlt (q_after_take xs) {length=0;first=Nil; last=Nil})) 
+                             (Add (get ys 0) :: diff_avlt {length=0;first=Nil; last=Nil} (q_after_take ys))))
+                    else (if (compare_till_index (length xs - 1) xs ys) 
+                     then (diff_avlt {length=0;first=Nil; last=Nil} (take_upto_index (length xs -1) ys))
+                     else (List.append (Take (get xs 0) :: (diff_avlt (q_after_take xs) {length=0;first=Nil; last=Nil})) 
+                          (Add (get ys 0) :: diff_avlt {length=0;first=Nil; last=Nil} (q_after_take ys))))
+
+    in
+    diff_avlt xt yt
+
+
+   let rec shift_patch acc = function
     | [] -> List.rev acc
-    | e::tl -> shift_patch (e::acc) o tl
+    | e::tl -> shift_patch (e::acc) tl
 
 
    let offset = function
@@ -211,7 +211,22 @@ end
     (* take_all gives us the list of take edits needed to empty the queue *)
     let rec take_all x = match x with 
     | [] -> []
-    | e::tl -> Take (get_edit_atom e) :: take_all tl
+    | Add nx::tl -> Take nx :: take_all tl
+    | Take nx :: tl -> take_all tl
+
+    (* take_all gives us the list of take edits needed to empty the queue *)
+    let rec add_all x = match x with 
+    | [] -> []
+    | Add nx::tl -> Add nx :: add_all tl
+    | Take nx :: tl -> add_all tl
+
+    let uniq_cons x xs = if List.mem x xs then xs else x :: xs
+
+    let remove_from_right xs = List.fold_right uniq_cons xs []
+
+    let cons_uniq xs x = if List.mem x xs then xs else x :: xs
+
+    let remove_from_left xs = List.rev (List.fold_left cons_uniq [] xs)
 
   (* calculates the operation transform between two edit sequences *)
   let rec diff_edit x y = match (x,y) with 
@@ -222,49 +237,80 @@ end
                                     if c < 0 then Add nx :: Add ny :: diff_edit xs ys 
                                     else if c = 0 then Add nx :: (diff_edit xs ys)
                                     else  Add ny :: Add nx :: diff_edit xs ys 
-    | Take nx :: xs, Take ny :: ys -> Take nx :: (diff_edit xs ys)
+    | Take nx :: xs, Take ny :: ys -> if (List.mem (Add nx) ys) then 
+                                      (if (List.mem (Add nx) xs) then (diff_edit xs ys) 
+                                      else (diff_edit xs (delete (Add nx) ys)))
+                                     else (diff_edit (delete (Add nx) xs) ys) 
     | x', y' when x' = y' -> []
-    | Add nx :: xs, Take ny :: ys -> (Add nx :: diff_edit xs ys) 
-    | Take nx :: xs, Add ny :: ys -> (Take nx :: diff_edit [] xs)
+    | Add nx :: xs, Take ny :: ys -> diff_edit (Add nx :: xs) (Take ny :: ys)
+    | Take nx :: xs, Add ny :: ys -> diff_edit (Take nx :: ys) (Add ny :: xs)
 
-  let diff_append p q = match p, q with 
+  let rec diff_append p q = match p, q with 
   | [], [] -> ([], [])
   | xs, [] -> (xs, [])
   | [], ys -> ([], ys)
-  | x :: xs, y :: ys -> ((List.append 
-                (take_all (y :: ys))
-                (diff_edit (x :: xs) (y :: ys))), 
-                (List.append 
-                (take_all (x :: xs))
-                (diff_edit (x :: xs) (y :: ys))))
+  | Add nx :: xs, Add ny :: ys -> ((remove_from_right (List.append 
+                (take_all (Add ny :: ys))
+                (diff_edit (Add nx :: xs) (Add ny :: ys)))), 
+                (((remove_from_right (List.append 
+                (take_all (Add nx :: xs))
+                (diff_edit (Add nx :: xs) (Add ny :: ys)))))))
+  | Add nx :: xs, Take ny :: ys -> if (List.mem (Add ny) ys) then 
+                (((remove_from_right
+                (add_all (Add nx :: xs)))),
+                (remove_from_right (List.append
+                (take_all (Add ny :: Add nx :: xs))
+                (List.append (add_all (ys)) (add_all (delete (Add ny) (Add nx :: xs)))))))
+         else   ((delete (Add ny) (remove_from_right (List.append
+                (take_all (ys))
+                (diff_edit (Add ny :: Add nx :: xs) (ys))))),
+                (delete (Add ny) (remove_from_right (List.append 
+                (take_all (Add ny :: Add nx :: xs))
+                (diff_edit (Add ny :: Add nx :: xs) (ys))))))
+  | Take nx :: xs, Add ny :: ys -> if (List.mem (Add nx) xs) then 
+                ((remove_from_right(List.append
+                (take_all (Add nx :: Add ny :: ys))
+                (List.append (add_all (delete (Add nx) xs)) (add_all (Add nx :: Add ny :: ys))))),
+                ((remove_from_right
+                (add_all (Add ny :: ys)))))
+         else   ((delete (Add nx) (remove_from_right (List.append
+                (take_all (Add nx :: Add ny :: ys))
+                (diff_edit (xs) (Add ny :: ys))))),
+                (delete (Add nx) (remove_from_right (List.append 
+                (take_all (xs))
+                (diff_edit (xs) (Add ny :: ys))))))
+  | Take nx :: xs, Take ny :: ys -> ((remove_from_right (List.append 
+                (take_all (Take ny :: ys))
+                (diff_edit (Take nx :: xs) (Take ny :: ys)))), 
+                (remove_from_right (List.append 
+                (take_all (Take nx :: xs))
+                (diff_edit (Take nx :: xs) (Take ny :: ys)))))
 
- 
-  let op_transform p q =
-    let rec go xs a ys b =
-      match xs, a, ys, b with
-      | [], _, [], _ -> ([], [])
-      | xs, a, [], _ -> (shift_patch [] a xs, [])
-      | [], _, ys, b -> ([], shift_patch [] b ys)
-      | p',_ , q', _ when p'= q' -> ([], []) 
-      | Add nx :: [], a, Add ny :: ys, b when nx = ny -> ([], diff_edit [] ys)
-      | Take nx :: Take ny :: xs, a, Take ny' :: [], b -> ([], (Add ny :: diff_edit [] xs))
-      | Add nx :: xs, a, Take ny :: ys, b -> ((Take nx :: Add ny :: Add nx :: Add nx :: diff_edit xs ys), (diff_edit xs ys))
-      | Take nx :: xs, a, Add ny :: ys, b -> ((diff_edit xs ys), (Take ny :: Add nx :: Add ny :: Add ny :: diff_edit xs ys))
-      | x::xs, a, y::ys, b ->
+   let op_transform p q =
+    let rec go xs ys =
+      match xs, ys with
+      | [], [] -> ([], [])
+      | xs, [] -> (xs, [])
+      | [], ys -> ([], ys)
+      | p', q' when p'= q' -> ([], []) 
+      | x::xs, y::ys ->
         begin
           match x,y with
           | Add nx, Add ny  when nx = ny -> 
-             (diff_append (x :: xs) (y :: ys)) (*(go xs (a + offset y) ys (b + offset x))*)
+             (diff_append (x :: xs) (y :: ys)) 
           | Add (nx), Add (ny) -> 
               diff_append (x :: xs) (y :: ys)
-         | Add _, Take _ ->
-             diff_append (x :: xs) (y :: ys)
-          | Take _, Add _ ->
-             diff_append (x :: xs) (y :: ys)
-          | Take _, Take _ -> ((diff_edit (x :: xs) (y :: ys)), (diff_edit (x :: xs) (y :: ys))) 
+          | Add nx, Take ny -> if (xs = [] && ys = []) then (Add nx :: [], Take ny :: []) 
+                               else (diff_append (x :: xs) (y :: ys))
+          | Take nx, Add ny -> if (xs = [] && ys = []) then (Take nx :: [], Add ny :: []) 
+                               else (diff_append (x :: xs) (y :: ys))
+          | Take nx, Take ny -> diff_append (x :: xs) (y :: ys)
+
         end
     in
-    go p 0 q 0
+    go p q
+
+
 
    let rec apply s = function
     | [] -> s

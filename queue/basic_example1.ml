@@ -20,14 +20,17 @@ let _ =
 
   let module M = Queue_imp.Make(IntAtom) in
 
-  let a = M.empty |> M.add 4 |> M.add 3 |> M.add 2 |> M.add 1  in  
-  M.iter (fun x -> print_string "|" ; print_int x; print_string "|") (M.q_after_take a);
+  let a = M.empty |> M.add 4 |> M.add 3 |> M.add 2 |> M.add 1  in 
+  let b = M.empty |> M.add 4 |> M.add 1 in  
+  M.iter (fun x -> print_string "|" ; print_int x; print_string "|") (M.take_upto_index 1 a);
   print_newline() ;
   print_int (M.length a);
   print_newline ();
-  print_int (M.take a);
+  (*print_int (M.take a);*)
   print_newline() ;
   print_int (M.nthq a 0);
+  Printf.printf "%B" (M.compare_till_index 0 a b) ;
+  Printf.printf "%B" (M.compare_q a b)
 
 
 
