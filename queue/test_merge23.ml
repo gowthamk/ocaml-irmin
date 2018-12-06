@@ -1,6 +1,6 @@
-(* original = |1||2||3|
-   q1 = |2|
-   q2 = |2||1| *)
+(* original = |1|
+   q1 = |2|3|
+   q2 = |4||5| *)
 (* Utility functions *)
 module U = struct
   let string_of_list f l = "[ " ^ List.fold_left (fun a b -> a ^ (f b) ^ "; ") "" l ^ "]"
@@ -9,7 +9,7 @@ end
 
 (* Queue *)
 let _ =
-  U.print_header "Queue17";
+  U.print_header "Queue23";
   let module IntAtom = struct
     type t = int
     let compare = Pervasives.compare
@@ -23,9 +23,9 @@ let _ =
 
   let module M = Queue_imp.Make(IntAtom) in
 
-  let original = M.empty |> M.add 2 in 
-  let q1 =  M.empty |> M.add 7 |> M.add 3 |> M.add 1 in 
-  let q2 = M.empty |> M.add 2 |> M.add 3 |> M.add 5 in 
+  let original = M.empty  in 
+  let q1 =  M.empty |> M.add 1 |> M.add 2 |> M.add 3  in 
+  let q2 = M.empty |> M.add 4 |> M.add 5 |> M.add 1 in 
   (* Edit seq generation demonstration *)
   let edit_seq_printer = U.string_of_list (M.edit_to_string IntAtom.to_string) in 
   (* edit seq generation with diff *)

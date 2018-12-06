@@ -158,7 +158,7 @@ end
   | Take nx -> nx
 
 
-    let rec delete (x:edit) (l: edit list) = match l with 
+    let rec delete x l = match l with 
     | [] -> []
     | y :: l' -> if x = y then l' else y :: delete x l'
 
@@ -228,34 +228,84 @@ end
 
     let remove_from_left xs = List.rev (List.fold_left cons_uniq [] xs)
 
+    let rec find_el x lst =
+    match lst with
+    | [] -> raise (Failure "Not Found")
+    | h :: t -> if x = h then 0 else 1 + find_el x t
+
+
+    let rec check_common_el_list x y = match (x,y) with 
+     | [], [] -> true 
+     | xs, [] -> false
+     | [], ys -> false  
+     | x' :: xs', y' :: ys' -> if x' = y' || List.mem x' (y' :: ys') then true else check_common_el_list xs' (y' :: ys')
+
+    let rec sublist_upto_index i l = match l with 
+     | [] -> raise (Failure "Not Found")
+     | h :: t -> if i = 0 then [] else h :: sublist_upto_index (i-1) t 
+
+    let prev_el_list e l = match l with 
+    | [] -> []
+    | x :: xs -> let i = (find_el e l) in
+                 if i = 0 then []
+                 else (x :: (sublist_upto_index (i-1) xs)) 
+
+     let diff l1 l2 = List.filter (fun x -> not (List.mem x l2)) l1
+
+    let rec maintain_order_list l1 l2 = match (l1, l2) with 
+     | [], [] -> []
+     | xs, [] -> xs
+     | [], ys -> ys 
+     | (x :: xs), (y:: ys) -> if (List.mem x (y::ys)) then 
+       (List.append (prev_el_list x (y :: ys)) 
+        (List.append [x] (maintain_order_list xs (diff (y :: ys) (List.append (prev_el_list x (y :: ys)) [x])))))
+       else List.append [x] (maintain_order_list xs (y :: ys))
+
+    let rec print_list = function 
+     [] -> ()
+     | e::l -> print_int e ; print_string " " ; print_list l
+
+
   (* calculates the operation transform between two edit sequences *)
   let rec diff_edit x y = match (x,y) with 
     | [],[] -> []
     | xs , [] -> xs
     | [], ys -> ys 
-    | Add nx :: xs, Add ny :: ys -> let c = Atom.compare nx ny in 
-                                    if c < 0 then Add nx :: Add ny :: diff_edit xs ys 
-                                    else if c = 0 then Add nx :: (diff_edit xs ys)
-                                    else  Add ny :: Add nx :: diff_edit xs ys 
+    | Add nx :: xs, Add ny :: ys -> (let c = Atom.compare nx ny in 
+                                        if c < 0 then Add nx :: Add ny :: diff_edit xs ys 
+                                        else if c = 0 then Add nx :: (diff_edit xs ys)
+                                        else  Add ny :: Add nx :: (diff_edit xs ys))
     | Take nx :: xs, Take ny :: ys -> if (List.mem (Add nx) ys) then 
-                                      (if (List.mem (Add nx) xs) then (diff_edit xs ys) 
-                                      else (diff_edit xs (delete (Add nx) ys)))
-                                     else (diff_edit (delete (Add nx) xs) ys) 
+                                      (if (List.mem (Add nx) xs) then remove_from_right(diff_edit xs ys) 
+                                      else remove_from_right(diff_edit xs (delete (Add nx) ys)))
+                                     else remove_from_right(diff_edit (delete (Add nx) xs) ys) 
     | x', y' when x' = y' -> []
-    | Add nx :: xs, Take ny :: ys -> diff_edit (Add nx :: xs) (Take ny :: ys)
-    | Take nx :: xs, Add ny :: ys -> diff_edit (Take nx :: ys) (Add ny :: xs)
+    | Add nx :: xs, Take ny :: ys -> remove_from_right(diff_edit (Add nx :: xs) (Take ny :: ys))
+    | Take nx :: xs, Add ny :: ys -> remove_from_right(diff_edit (Take nx :: ys) (Add ny :: xs))
+
 
   let rec diff_append p q = match p, q with 
   | [], [] -> ([], [])
   | xs, [] -> (xs, [])
   | [], ys -> ([], ys)
-  | Add nx :: xs, Add ny :: ys -> ((remove_from_right (List.append 
+  | Add nx :: xs, Add ny :: ys -> if (check_common_el_list (Add nx :: xs) (Add ny :: ys)) then
+                                       ((remove_from_right (List.append 
+                                       (take_all (Add ny :: ys))
+                                       (remove_from_left (maintain_order_list (add_all (Add nx :: xs)) (add_all (Add ny :: ys)))))), 
+                                       ((List.append (take_all (Add nx :: xs)) 
+                                        (remove_from_left (maintain_order_list (add_all (Add nx :: xs)) (add_all (Add ny :: ys))))))) else           
+               ((remove_from_right (List.append 
                 (take_all (Add ny :: ys))
                 (diff_edit (Add nx :: xs) (Add ny :: ys)))), 
                 (((remove_from_right (List.append 
                 (take_all (Add nx :: xs))
                 (diff_edit (Add nx :: xs) (Add ny :: ys)))))))
-  | Add nx :: xs, Take ny :: ys -> if (List.mem (Add ny) ys) then 
+  | Add nx :: xs, Take ny :: ys -> if ((check_common_el_list (Add nx :: xs) (delete (Add ny) (Add ny :: ys)))) then 
+             ((remove_from_right (List.append (take_all (ys))
+              (remove_from_left (maintain_order_list (add_all (Add nx :: xs)) (add_all (ys)))))), 
+              ((List.append (take_all (Add ny :: Add nx :: xs)) 
+              (remove_from_left (maintain_order_list (add_all (Add nx :: xs)) (add_all (ys)))))))
+         else    if (List.mem (Add ny) ys) then 
                 (((remove_from_right
                 (add_all (Add nx :: xs)))),
                 (remove_from_right (List.append
@@ -267,7 +317,12 @@ end
                 (delete (Add ny) (remove_from_right (List.append 
                 (take_all (Add ny :: Add nx :: xs))
                 (diff_edit (Add ny :: Add nx :: xs) (ys))))))
-  | Take nx :: xs, Add ny :: ys -> if (List.mem (Add nx) xs) then 
+  | Take nx :: xs, Add ny :: ys -> if ((check_common_el_list (xs) (delete (Add nx) (Add ny :: ys)))) then 
+             ((remove_from_right (List.append (take_all (Add nx :: Add ny :: ys))
+              (remove_from_left (maintain_order_list (add_all (xs)) (add_all (Add ny :: ys)))))), 
+              ((List.append (take_all (xs)) 
+              (remove_from_left (maintain_order_list (add_all (xs)) (add_all (Add ny :: ys)))))))
+             else if (List.mem (Add nx) xs) then 
                 ((remove_from_right(List.append
                 (take_all (Add nx :: Add ny :: ys))
                 (List.append (add_all (delete (Add nx) xs)) (add_all (Add nx :: Add ny :: ys))))),
@@ -276,10 +331,16 @@ end
          else   ((delete (Add nx) (remove_from_right (List.append
                 (take_all (Add nx :: Add ny :: ys))
                 (diff_edit (xs) (Add ny :: ys))))),
-                (delete (Add nx) (remove_from_right (List.append 
+                (delete (Add nx) (remove_from_left (List.append 
                 (take_all (xs))
                 (diff_edit (xs) (Add ny :: ys))))))
-  | Take nx :: xs, Take ny :: ys -> ((remove_from_right (List.append 
+  | Take nx :: xs, Take ny :: ys -> if ((check_common_el_list (xs) (delete (Add nx) (Add ny :: ys))) && (not (List.mem (Add nx) ys)) &&
+                 (not (List.mem (Add nx) xs))) then 
+                 ((remove_from_right (List.append (take_all (ys))
+                 (remove_from_left (maintain_order_list (add_all (xs)) (add_all (ys)))))), 
+                 ((List.append (take_all (xs)) 
+                 (remove_from_left (maintain_order_list (add_all (xs)) (add_all (ys)))))))
+                else ((remove_from_right (List.append 
                 (take_all (Take ny :: ys))
                 (diff_edit (Take nx :: xs) (Take ny :: ys)))), 
                 (remove_from_right (List.append 
@@ -304,7 +365,7 @@ end
                                else (diff_append (x :: xs) (y :: ys))
           | Take nx, Add ny -> if (xs = [] && ys = []) then (Take nx :: [], Add ny :: []) 
                                else (diff_append (x :: xs) (y :: ys))
-          | Take nx, Take ny -> diff_append (x :: xs) (y :: ys)
+          | Take nx, Take ny -> if ys = [] then (fst (diff_append xs []), []) else diff_append (x :: xs) (y :: ys)
 
         end
     in

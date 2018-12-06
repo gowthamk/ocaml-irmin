@@ -30,7 +30,11 @@ let _ =
   print_newline() ;
   print_int (M.nthq a 0);
   Printf.printf "%B" (M.compare_till_index 0 a b) ;
-  Printf.printf "%B" (M.compare_q a b)
+  Printf.printf "%B" (M.compare_q a b) ;
+  Printf.printf "%B" (M.check_common_el_list [2;3;4] [4;5;6]) ;
+  print_int (M.find_el 3 [6;2;3;5]);
+  M.print_list (M.prev_el_list 3 [6;2;3;5]) ;
+  M.print_list (M.maintain_order_list [1;2;3;5] [7;3;1;4;5])
 
 
 
