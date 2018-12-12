@@ -24,7 +24,7 @@ One which computes the operation transform. (p' and q')
 ### Edit-distance algorithm:
 * edit-dist (q1, q2) where we are calculating the distance to reach from q1 to q2
 * [-] represents empty-queue and x ::: xs represents x added first to queue followed by the rest of the elements
-* [ ] represents empty list and x :: xs represents x as head of the list and xs as tail of the list
+* [] represents empty list and x :: xs represents x as head of the list and xs as tail of the list
 ```
 edit-dist (q1, q2) =
 Base case: ([-], [-]) -> ([-])
@@ -74,5 +74,50 @@ case 4: (Add nx :: ps, Take ny :: qs) ->
                            then (Take-all qs ++ op-trans (Add ny :: Add nx :: ps) ys) - Add ny,
                                 (Take ny :: Take nx :: Take-all xs ++ op-trans (Add ny :: Add nx :: ps) ys) - Add ny
 case 5: (Take nx :: ps, Add ny :: qs) -> 
+                  case 50: if there are common elements then
+                           then Take nx :: Take ny :: Take-all qs ++ list of Add edits where order is maintained,
+                                Take nx :: Take-all ps ++ list of Add edits where order is maintained
+                  case 41: if Add nx in qs 
+                           then Take nx :: Take ny :: Tale-all qs  ++ (Add nx :: Add-all ps,
+                                Take ny :: Take nx :: Take-all xs ++ 
+                                list of Add edits for ys ++ 
+                                list of Add edits for (Add nx :: ps - Add ny) 
+                  case 42: if above two cases are not true 
+                           then (Take-all qs ++ op-trans (Add ny :: Add nx :: ps) ys) - Add ny,
+                                (Take ny :: Take nx :: Take-all xs ++ op-trans (Add ny :: Add nx :: ps) ys) - Add ny
 ```
-                     
+```  
+Base case : If both p and q qre [] -> p' = [] and q' = []
+case 1: if p is some list l an q is [] -> p' = l and q' = []
+case 2: if p is [] and q is some list l -> p' = [] and q' = l
+case 3: if p is (p::ps) and q is (q::qs) -> we look at the following cases:
+case 30: p = (Add nx :: ps), q = (Add ny :: qs) -> 
+         if there are elements in common in both p and q 
+         then p' = Take out all the elements of q and then add all the Add edits of p and q maintaining the order,
+              q' = Take out all the elements of p and then add all the Add edits of p and q maintaining the order
+         else p' = Take out all the elements of q and then compare each element at each corresponding index in both p and q                    and add smaller one first followed by the other,
+              q' = Take out all the elements of p and then compare each element at each corresponding index in both p and q                    and add smaller one first followed by the other
+case 31:  p = (Add nx :: ps), q = (Take ny :: qs) -> 
+         if there are elements in common in both p and q 
+         then p' = Take out all the elements of qs and then add all the Add edits of p and qs maintaining the order,
+              q' = Take out all the elements of Add ny :: p and then add all the Add edits of p and qs maintaining the order
+         else if Add ny is present in qs
+              then p' = Add nx :: Add-all ps,
+                   q' = Take out all the elements of Add ny :: p and then add all ys and all add-all (p - Add ny)
+         else p = Take-all ps and then compare each element at each corresponding index in both (Add ny :: Add nx :: ps) and                   qs using our diff-edit algorithm 
+              q = Take ny :: Take nx :: Take-all ps and then compare each element at each corresponding index in both 
+                  (Add ny :: Add nx :: ps) and qs using our diff-edit algorithm
+case 32:  p = (Take nx :: ps), q = (Add ny :: qs) -> 
+         if there are elements in common in both p and q 
+         then p' = Take nx :: Take ny ::Take out all the elements of qs and then add all the Add edits of p and qs    maintaining the order,
+              q' = Take out all the elements of Add ny :: p and then add all the Add edits of p and qs maintaining the order
+         else if Add ny is present in qs
+              then p' = Add nx :: Add-all ps,
+                   q' = Take out all the elements of Add ny :: p and then add all ys and all add-all (p - Add ny)
+         else p = Take-all ps and then compare each element at each corresponding index in both (Add ny :: Add nx :: ps) and                   qs using our diff-edit algorithm 
+              q = Take ny :: Take nx :: Take-all ps and then compare each element at each corresponding index in both 
+                  (Add ny :: Add nx :: ps) and qs using our diff-edit algorithm
+         
+```        
+
+
