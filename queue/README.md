@@ -6,6 +6,8 @@ Queue of mergeable items are mergeable if they preserve the following properties
 * Elements present in both the merging queues will be present in the final queue. No element is popped out unless it is popped in at least one queue.
 * An element popped in one queue will not reappear in the merged queue. 
 * Ordering of elements in the queue is reatined because ordering is important in the queue because we know elements can be only popped out in FIFO order.
+* Merges converge 
+* Hence, merge queues are CRDTs.
 
 The merge operation for queue is composed of two separate functions, edit_seq and op_transform. The functions are described below.
 * edit_seq takes a pair of queue, v and v' and computes shortest sequence of queue operations that need to be applied on v to obtain v'.Such a sequence is called an edit sequence.
