@@ -16,4 +16,33 @@ type edit =
  ```
 * op_transform takes a pair of edit sequences, s1 and s2, that map a queue v to two different queue. v1 and v2, and trasnform s1 to s1' such that s1' has the same effect on v2 as s1 had on v.
 
+## Algorithm 
+There are two algorithms:
+One which computes the edit distance between two queue which is basically the sequence of edits. (p and q)
+One which computes the operation transform. (p' and q')
 
+### Edit-distance algorithm:
+* edit-dist (q1, q2) where we are calculating the distance to reach from q1 to q2
+* [-] represents empty-queue and x ::: xs represents x added first to queue followed by the rest of the elements
+* [ ] represents empty list and x :: xs represents x as head of the list and xs as tail of the list
+```
+edit-dist (q1, q2) =
+Base case: ([-], [-]) -> ([-])
+case 1: (q ::: qs, [-]) -> (Take q :: edit-dist qs)
+case 2: ([-], q ::: qs) -> (Add q :: edit-dist qs)
+case 3: (q ::: qs, q' ::: qs') -> case 30: if (|q ::: qs| > |q' ::: qs'|) then
+                                  if (q ::: qs == (q' ::: qs' upto |q' ::: qs'| - 1))
+                                  then Take q :: edit-dist qs [-] :: Add q' :: edit_dist [-] qs'
+                                  else Take q :: edit-dist qs (q' ::: qs')
+                                  
+                                  case 31: if (|q ::: qs| = |q' ::: qs'|) then
+                                  if (q ::: qs == q' ::: qs') 
+                                  then []
+                                  else Take q :: edit-dist qs [-] :: Add q' :: edit-dist [-] qs'
+                                  
+                                  case 32: if (|q ::: qs| < |q' ::: qs'|) then 
+                                  if (q ::: qs upto |q ::: qs| - 1) == (q' ::: qs')
+                                  then edit-dist [-] take(q' ::: qs' upto |q:::qs|-1)
+                                  else Take q :: edit-dist qs [-] :: Add q' :: edit-dist [-] qs'
+
+```
