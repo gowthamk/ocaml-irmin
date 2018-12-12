@@ -46,3 +46,33 @@ case 3: (q ::: qs, q' ::: qs') -> case 30: if (|q ::: qs| > |q' ::: qs'|) then
                                   else Take q :: edit-dist qs [-] :: Add q' :: edit-dist [-] qs'
 
 ```
+### Operation-transform algorithm:
+* op-trans (p, q) where we are calculating (p',q')
+```
+op-trans (p,q) =
+Base case: ([],[]) -> ([],[])
+case 1: (p, []) -> (p, [])
+case 2: ([], q) -> ([], q)
+case 3: (Add nx :: ps, Add ny :: qs) -> 
+                  if there are common elements then 
+                  then Take ny :: Take-all qs ++ list of Add edits where order is maintained,
+                       Take nx :: Take-all qs) ++ list of Add edits where order is maintained
+                  else 
+                  case 301: nx < ny -> (Take ny :: Take-all qs) ++ Add nx :: Add ny :: op-trans ps qs
+                  case 302: nx = ny -> (Take ny :: Take-all qs) ++ Add nx :: op-trans ps qs
+                  case 303: nx > ny -> (Take ny :: Take-all qs) ++ Add ny :: Add nx :: op-trans ps qs
+case 4: (Add nx :: ps, Take ny :: qs) ->
+                  case 40: if there are common elements then
+                           then Take-all qs ++ list of Add edits where order is maintained,
+                                Take nx :: Take-all ps ++ list of Add edits where order is maintained
+                  case 41: if Add ny in qs 
+                           then Add nx :: Add-all ps,
+                                Take ny :: Take nx :: Take-all xs ++ 
+                                list of Add edits for ys ++ 
+                                list of Add edits for (Add nx :: ps - Add ny) 
+                  case 42: if above two cases are not true 
+                           then (Take-all qs ++ op-trans (Add ny :: Add nx :: ps) ys) - Add ny,
+                                (Take ny :: Take nx :: Take-all xs ++ op-trans (Add ny :: Add nx :: ps) ys) - Add ny
+case 5: (Take nx :: ps, Add ny :: qs) -> 
+```
+                     
