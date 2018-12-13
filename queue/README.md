@@ -31,7 +31,7 @@ One which computes the operation transform. (p' and q')
 edit-dist (q1, q2) =
 Base case: ([-], [-]) -> ([-])
 case 1: (q ::: qs, [-]) -> (Take q :: edit-dist qs)
-case 2: ([-], q ::: qs) -> (Add q :: edit-dist qs)
+case 2: ([-], q ::: qs) -> (Add q :: edit-dist qs) 
 case 3: (q ::: qs, q' ::: qs') -> case 30: if (|q ::: qs| > |q' ::: qs'|) then
                                   if (q ::: qs == (q' ::: qs' upto |q' ::: qs'| - 1))
                                   then Take q :: edit-dist qs [-] :: Add q' :: edit_dist [-] qs'
@@ -48,6 +48,18 @@ case 3: (q ::: qs, q' ::: qs') -> case 30: if (|q ::: qs| > |q' ::: qs'|) then
                                   else Take q :: edit-dist qs [-] :: Add q' :: edit-dist [-] qs'
 
 ```
+base-case:
+
+![e-e](https://github.com/priyas13/ocaml-irmin/blob/master/queue/e-e.png)
+
+case1: 
+
+![q-e](https://github.com/priyas13/ocaml-irmin/blob/master/queue/q-e.png)
+
+case2: 
+
+![e-q](https://github.com/priyas13/ocaml-irmin/blob/master/queue/e-q.png)
+
 ### Operation-transform algorithm:
 * op-trans (p, q) where we are calculating (p',q')
 ```
