@@ -60,6 +60,9 @@ case2:
 
 ![e-q](https://github.com/priyas13/ocaml-irmin/blob/master/queue/q-e.png)
 
+case3:
+![eq-eq](https://github.com/priyas13/ocaml-irmin/blob/master/queue/eq-eq.png)
+
 ### Operation-transform algorithm:
 * op-trans (p, q) where we are calculating (p',q')
 ```
