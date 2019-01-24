@@ -1,5 +1,6 @@
 open Lwt.Infix
 open Irmin_unix
+open Printf
 
 (* Config module has three functions root, shared and init. *)
 module type Config = sig
@@ -13,10 +14,12 @@ module MakeVersioned (Config: Config)  = struct
   module OM = Canvas.Make
   module K = Irmin.Hash.SHA1
 
-  let from_just = function (Some x) -> x
-  | None -> failwith "Expected Some. Got None."
+  let from_just op msg = match op with
+    | Some x -> x
+    | None -> failwith @@ msg^": Expected Some. Got None."
 
-  (* vpixel is a record type which consist of parameters r, g and b where all of them are of char type *)
+	(* vpixel is a record type which consist of parameters r, g and b where all
+			of them are of char type *)
   type vpixel = {r:char; g:char; b:char}
 
   type vnode = {tl_t:K.t; tr_t:K.t; bl_t:K.t; br_t:K.t}
@@ -25,7 +28,6 @@ module MakeVersioned (Config: Config)  = struct
   type vt = 
    | N of vpixel 
    | B of vnode
-  
 
   module M = struct
     module AO_value = struct
@@ -59,11 +61,18 @@ module MakeVersioned (Config: Config)  = struct
         |~ case1 "B" vnode (fun x -> B x)
         |> sealv
 
-    let pp = Irmin.Type.dump t
+			let pp = Irmin.Type.pp_json ~minify:false t
     
-     let of_string s =
+     	let of_string s =
         let decoder = Jsonm.decoder (`String s) in
-        Irmin.Type.decode_json t decoder
+        let res = try Irmin.Type.decode_json t decoder 
+                  with Invalid_argument s -> 
+                    (failwith @@ sprintf "AO_Value.of_string:\
+                      \ Invalid_argument: %s" s) in
+        (*let _ = match res with
+          | Ok _ -> printf "all ok\n"
+          | Error (`Msg s) -> printf "Error:%s\n" s in*)
+        res
 
     end
     
@@ -81,61 +90,60 @@ module MakeVersioned (Config: Config)  = struct
         let level = Irmin.Private.Conf.get config level in
         Git_unix.FS.create ?root ?level ()
 
-      (* Somehow pulls the config set by Store.init *)
-      (* And creates a Git backend *)
-      let create () = create @@ Irmin_git.config Config.shared
+      (* Creates a Git backend *)
+      let create () = create @@ Irmin_git.config Config.root
     end
 
     type t = K.t
      
     (* canvas functions *)
 
-  let default_pixel = {r=Char.chr 255; g=Char.chr 255; b=Char.chr 255}   
-  let blank = N default_pixel
+		let default_pixel = {r=Char.chr 255; g=Char.chr 255; b=Char.chr 255}   
+		let blank = N default_pixel
 
-  let empty = 
-    AO_store.create () >>= fun ao_store ->
-    AO_store.add ao_store blank
+		let empty = 
+			AO_store.create () >>= fun ao_store ->
+			AO_store.add ao_store blank
 
-  let plain px = 
-    AO_store.create () >>= fun ao_store ->
-    AO_store.add ao_store @@ N px
+		let plain px = 
+			AO_store.create () >>= fun ao_store ->
+			AO_store.add ao_store @@ N px
 
-  let cons tl tr bl br  = 
-    let new_c = B {tl_t=tl; tr_t=tr; bl_t=bl; br_t=br} in
-      AO_store.create () >>= fun ao_store ->
-      AO_store.add ao_store new_c
+		let cons tl tr bl br  = 
+			let new_c = B {tl_t=tl; tr_t=tr; bl_t=bl; br_t=br} in
+				AO_store.create () >>= fun ao_store ->
+				AO_store.add ao_store new_c
 
-  let b_of_n px = plain px >>= fun k -> cons k k k k 
+		let b_of_n px = plain px >>= fun k -> cons k k k k 
 
-  let rec of_adt (a:OM.t) : t Lwt.t  =
-      let aostore = AO_store.create () in
-      let aostore_add value =
-        aostore >>= (fun ao_store -> AO_store.add ao_store value) in
-      aostore_add =<<
-      (match a with
-       | OM.N {r;g;b} -> Lwt.return @@ N {r;g;b}
-       | OM.B {tl_t;tr_t;bl_t;br_t} -> 
-         (of_adt tl_t >>= fun tl_t' ->
-          of_adt tr_t >>= fun tr_t' ->
-          of_adt bl_t >>= fun bl_t' ->
-          of_adt br_t >>= fun br_t' ->
-          Lwt.return {tl_t=tl_t'; tr_t=tr_t'; bl_t=bl_t'; br_t=br_t'})
-         >>= ((fun n -> Lwt.return @@ (B n))))
+		let rec of_adt (a:OM.t) : t Lwt.t  =
+				let aostore = AO_store.create () in
+				let aostore_add value =
+					aostore >>= (fun ao_store -> AO_store.add ao_store value) in
+				aostore_add =<<
+				(match a with
+				 | OM.N {r;g;b} -> Lwt.return @@ N {r;g;b}
+				 | OM.B {tl_t;tr_t;bl_t;br_t} -> 
+					 (of_adt tl_t >>= fun tl_t' ->
+						of_adt tr_t >>= fun tr_t' ->
+						of_adt bl_t >>= fun bl_t' ->
+						of_adt br_t >>= fun br_t' ->
+						Lwt.return {tl_t=tl_t'; tr_t=tr_t'; bl_t=bl_t'; br_t=br_t'})
+					 >>= ((fun n -> Lwt.return @@ (B n))))
 
-  let rec to_adt (k:t) : OM.t Lwt.t =
-      AO_store.create () >>= fun ao_store ->
-      AO_store.find ao_store k >>= fun t ->
-      let t = from_just t in
-      (match t with
-      | N {r;g;b} -> Lwt.return @@ OM.N {r;g;b}
-      | B {tl_t;tr_t;bl_t;br_t} ->
-        (to_adt tl_t >>= fun tl_t' ->
-         to_adt tr_t >>= fun tr_t' ->
-         to_adt bl_t >>= fun bl_t' ->
-         to_adt br_t >>= fun br_t' ->
-         Lwt.return {OM.tl_t=tl_t'; OM.tr_t=tr_t'; OM.bl_t=bl_t'; OM.br_t=br_t'})
-        >>= ((fun n -> Lwt.return @@ (OM.B n))))
+		let rec to_adt (k:t) : OM.t Lwt.t =
+				AO_store.create () >>= fun ao_store ->
+				AO_store.find ao_store k >>= fun t ->
+				let t = from_just t "to_adt" in
+				(match t with
+				| N {r;g;b} -> Lwt.return @@ OM.N {r;g;b}
+				| B {tl_t;tr_t;bl_t;br_t} ->
+					(to_adt tl_t >>= fun tl_t' ->
+					 to_adt tr_t >>= fun tr_t' ->
+					 to_adt bl_t >>= fun bl_t' ->
+					 to_adt br_t >>= fun br_t' ->
+					 Lwt.return {OM.tl_t=tl_t'; OM.tr_t=tr_t'; OM.bl_t=bl_t'; OM.br_t=br_t'})
+					>>= ((fun n -> Lwt.return @@ (OM.B n))))
 
     let t = K.t
 
@@ -149,7 +157,7 @@ module MakeVersioned (Config: Config)  = struct
     let rec merge ~(old:t Irmin.Merge.promise) v1_k v2_k =
       let open Irmin.Merge.Infix in
       old () >>=* fun old_k ->
-      let old_k = from_just old_k in
+      let old_k = from_just old_k "merge" in
       to_adt old_k >>= fun oldv  ->
       to_adt v1_k >>= fun v1  ->
       to_adt v2_k >>= fun v2 ->
@@ -184,118 +192,119 @@ module MakeVersioned (Config: Config)  = struct
     let read t k = Store.find t k
   end
 
-(* Vpst is a module which consist of type store, st and 'a t *)
-  module Vpst : sig
-  type 'a t
-  val return : 'a -> 'a t
-  val bind : 'a t -> ('a -> 'b t) -> 'b t
-  val with_init_version_do: OM.t -> 'a t -> 'a
-  val fork_version : 'a t -> unit t
-  val get_latest_version: unit -> OM.t t
-  val sync_next_version: ?v:OM.t -> OM.t t
-  val liftLwt : 'a Lwt.t -> 'a t
-end = struct
-    (* store is a type which is basically of type BC_store.t *)
-    type store = BC_store.t
-    (* st is a record type with fields as master, local, name and next_id *)
-    type st = {master   : store;
-               local    : store;
-               name     : string;
-               next_id  : int}
-    type 'a t = st -> ('a * st) Lwt.t
+	(* Vpst is a module which consist of type store, st and 'a t *)
+	module Vpst : sig
+		type 'a t
+		val return : 'a -> 'a t
+		val bind : 'a t -> ('a -> 'b t) -> 'b t
+		val with_init_version_do: OM.t -> 'a t -> 'a
+		val fork_version : 'a t -> unit t
+		val get_latest_version: unit -> OM.t t
+		val sync_next_version: ?v:OM.t -> OM.t t
+		val liftLwt : 'a Lwt.t -> 'a t
+	end = struct
+			(* store is a type which is basically of type BC_store.t *)
+			type store = BC_store.t
+			(* st is a record type with fields as master, local, name and next_id *)
+			type st = {master   : store;
+								 local    : store;
+								 name     : string;
+								 next_id  : int}
+			type 'a t = st -> ('a * st) Lwt.t
 
-    let info s = Irmin_unix.info "[repo %s] %s" Config.root s  
+			let info s = Irmin_unix.info "[repo %s] %s" Config.root s  
 
-    let path = ["state"]
+			let path = ["state"]
 
-    let return (x : 'a) : 'a t = fun st -> Lwt.return (x,st)
+			let return (x : 'a) : 'a t = fun st -> Lwt.return (x,st)
 
-    let bind (m1: 'a t) (f: 'a -> 'b t) : 'b t = 
-      fun st -> (m1 st >>= fun (a,st') -> f a st')
+			let bind (m1: 'a t) (f: 'a -> 'b t) : 'b t = 
+				fun st -> (m1 st >>= fun (a,st') -> f a st')
 
-    let with_init_version_do (v: OM.t) (m: 'a t) =
-      Lwt_main.run 
-        begin
-          BC_store.init () >>= fun repo -> 
-          BC_store.master repo >>= fun m_br -> 
-          M.of_adt v >>= fun k ->
-          let cinfo = info "creating state of master" in
-          BC_store.update m_br path k ~info:cinfo >>= fun () ->
-          BC_store.clone m_br "1_local" >>= fun t_br ->
-          let st = {master=m_br; local=t_br; name="1"; next_id=1} in
-          m st >>= fun (a,_) -> Lwt.return a
-        end
+			let with_init_version_do (v: OM.t) (m: 'a t) =
+				Lwt_main.run 
+					begin
+						BC_store.init () >>= fun repo -> 
+						BC_store.master repo >>= fun m_br -> 
+						M.of_adt v >>= fun k ->
+            (*let _ = printf "key: %s\n" @@ Fmt.to_to_string K.pp k * in*)
+						let cinfo = info "creating state of master" in
+						BC_store.update m_br path k ~info:cinfo >>= fun () ->
+						BC_store.clone m_br "1_local" >>= fun t_br ->
+						let st = {master=m_br; local=t_br; name="1"; next_id=1} in
+						m st >>= fun (a,_) -> Lwt.return a
+					end
 
-    let with_init_forked_do (m: 'a t) = 
-      BC_store.init () >>= fun repo -> 
-      BC_store.master repo >>= fun m_br ->
-      BC_store.clone m_br "1_local" >>= fun t_br ->
-      let st = {master=m_br; local=t_br; name="1"; next_id=1} in
-      m st >>= fun (a, _) -> Lwt.return a
+			let with_init_forked_do (m: 'a t) = 
+				BC_store.init () >>= fun repo -> 
+				BC_store.master repo >>= fun m_br ->
+				BC_store.clone m_br "1_local" >>= fun t_br ->
+				let st = {master=m_br; local=t_br; name="1"; next_id=1} in
+				m st >>= fun (a, _) -> Lwt.return a
 
-    let fork_version (m: 'a t) : unit t = fun (st: st) ->
-      let thread_f () = 
-        let child_name = st.name^"_"^(string_of_int st.next_id) in
-        let parent_m_br = st.master in
-        (* Ideally, the following has to happen: *)
-        (* BC_store.clone_force parent_m_br m_name >>= fun m_br -> *)
-        (* But, we currently default to an SC mode. Master is global. *)
-        let m_br = parent_m_br in
-        BC_store.clone m_br (child_name^"_local") >>= fun t_br ->
-        let new_st = {master = m_br; local  = t_br; name = child_name; next_id = 1} in
-        m new_st in
-      begin
-        Lwt.async thread_f;
-        Lwt.return ((), {st with next_id=st.next_id+1})
-      end
+			let fork_version (m: 'a t) : unit t = fun (st: st) ->
+				let thread_f () = 
+					let child_name = st.name^"_"^(string_of_int st.next_id) in
+					let parent_m_br = st.master in
+					(* Ideally, the following has to happen: *)
+					(* BC_store.clone_force parent_m_br m_name >>= fun m_br -> *)
+					(* But, we currently default to an SC mode. Master is global. *)
+					let m_br = parent_m_br in
+					BC_store.clone m_br (child_name^"_local") >>= fun t_br ->
+					let new_st = {master = m_br; local  = t_br; name = child_name; next_id = 1} in
+					m new_st in
+				begin
+					Lwt.async thread_f;
+					Lwt.return ((), {st with next_id=st.next_id+1})
+				end
 
-    let get_latest_version () : OM.t t = fun (st: st) ->
-      BC_store.read st.local path >>= fun k ->
-      M.to_adt @@ from_just k >>= fun td ->
-      Lwt.return (td,st)
+			let get_latest_version () : OM.t t = fun (st: st) ->
+				BC_store.read st.local path >>= fun k ->
+				M.to_adt @@ from_just k "get_latest_version" >>= fun td ->
+				Lwt.return (td,st)
 
-    let sync_remote_version remote_uri ?v : OM.t t = fun (st: st) ->
-      (* How do you commit the next version? Simply update path? *)
-      (* 1. Commit to the local branch *)
-      let cinfo = info "committing local state" in
-      (match v with 
-       | None -> Lwt.return ()
-       | Some v -> 
-         M.of_adt v >>= fun k -> 
-         BC_store.update st.local path k cinfo) >>= fun () ->
+			let sync_remote_version remote_uri ?v : OM.t t = fun (st: st) ->
+				(* How do you commit the next version? Simply update path? *)
+				(* 1. Commit to the local branch *)
+				let cinfo = info "committing local state" in
+				(match v with 
+				 | None -> Lwt.return ()
+				 | Some v -> 
+					 M.of_adt v >>= fun k -> 
+					 BC_store.update st.local path k cinfo) >>= fun () ->
 
-      (* 2.. Pull from remote to master *)
-      let cinfo = info (Printf.sprintf "Merging remote: %s" remote_uri) in
-      BC_store.Sync.pull st.master (Irmin.remote_uri remote_uri) (`Merge  cinfo) >>= fun _ ->
-      (* 2. Merge local master to the local branch *)
-      let cinfo = info "Merging master into local" in
-      BC_store.merge st.master ~into:st.local ~info:cinfo >>= fun _ ->
-      (* 3. Merge local branch to the local master *)
-      let cinfo = info "Merging local into master" in
-      BC_store.merge st.local ~into:st.master ~info:cinfo >>= fun _ ->
-      get_latest_version () st
+				(* 2.. Pull from remote to master *)
+				let cinfo = info (Printf.sprintf "Merging remote: %s" remote_uri) in
+				BC_store.Sync.pull st.master (Irmin.remote_uri remote_uri) (`Merge  cinfo) >>= fun _ ->
+				(* 2. Merge local master to the local branch *)
+				let cinfo = info "Merging master into local" in
+				BC_store.merge st.master ~into:st.local ~info:cinfo >>= fun _ ->
+				(* 3. Merge local branch to the local master *)
+				let cinfo = info "Merging local into master" in
+				BC_store.merge st.local ~into:st.master ~info:cinfo >>= fun _ ->
+				get_latest_version () st
 
-    let sync_next_version ?v : OM.t t = fun (st: st) ->
-      (* How do you commit the next version? Simply update path? *)
-      (* 1. Commit to the local branch *)
-      let cinfo = info "committing local state" in
-      (match v with 
-       | None -> Lwt.return ()
-       | Some v -> 
-         M.of_adt v >>= fun k -> 
-         BC_store.update st.local path k cinfo) >>= fun () ->
+			let sync_next_version ?v : OM.t t = fun (st: st) ->
+				(* How do you commit the next version? Simply update path? *)
+				(* 1. Commit to the local branch *)
+				let cinfo = info "committing local state" in
+				(match v with 
+				 | None -> Lwt.return ()
+				 | Some v -> 
+					 M.of_adt v >>= fun k -> 
+					 BC_store.update st.local path k cinfo) >>= fun () ->
 
-      (* 2. Merge local master to the local branch *)
-      let cinfo = info "Merging master into local" in
-      BC_store.merge st.master ~into:st.local ~info:cinfo >>= fun _ ->
-      (* 3. Merge local branch to the local master *)
-      let cinfo = info "Merging local into master" in
-      BC_store.merge st.local ~into:st.master ~info:cinfo >>= fun _ ->
-      get_latest_version () st
+				(* 2. Merge local master to the local branch *)
+				let cinfo = info "Merging master into local" in
+				BC_store.merge st.master ~into:st.local ~info:cinfo >>= fun _ ->
+				(* 3. Merge local branch to the local master *)
+				let cinfo = info "Merging local into master" in
+				BC_store.merge st.local ~into:st.master ~info:cinfo >>= fun _ ->
+				get_latest_version () st
 
-    let liftLwt (m: 'a Lwt.t) : 'a t = fun st ->
-      m >>= fun a -> Lwt.return (a,st)
-end 
+			let liftLwt (m: 'a Lwt.t) : 'a t = fun st ->
+				m >>= fun a -> Lwt.return (a,st)
+	end 
 end
 
 

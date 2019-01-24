@@ -8,7 +8,7 @@ until needed. Thus, an empty canvas is represented by a single tree
 node whose pixel value (rgb format) is default (say, white).
 
 An sample collaborative drawing session between Alice and Bob is
-presented in `main.ml`.
+presented in `test.ml`.
 
 ### To Compile ###
 
