@@ -12,5 +12,12 @@ presented in `test.ml`.
 
 ### To Compile ###
 
-    ocamlfind ocamlopt canvas.ml icanvas.ml test.ml -o canvas -package ezjsonm,irmin-unix,lwt.unix -linkpkg -thread 
+Threads:
 
+    ocamlfind ocamlopt canvas.ml icanvas.ml test.ml -o canvas -package jsonm,irmin-unix,lwt.unix -linkpkg -thread 
+
+Remote actors (Alice and Bob):
+
+    ocamlfind ocamlopt canvas.ml icanvas.ml alice.ml -o alice -package jsonm,irmin-unix,lwt.unix -linkpkg -thread 
+    ocamlfind ocamlopt canvas.ml icanvas.ml bob.ml -o bob -package jsonm,irmin-unix,lwt.unix -linkpkg -thread 
+  

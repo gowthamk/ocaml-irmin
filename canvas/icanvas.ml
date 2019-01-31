@@ -228,12 +228,12 @@ module MakeVersioned (Config: Config)  = struct
     val return : 'a -> 'a t
     val bind: 'a t -> ('a -> 'b t) -> 'b t
     val with_init_version_do: OM.t -> 'a t -> 'a 
+    val with_remote_version_do: string -> 'a t -> 'a
     val fork_version: 'a t -> unit t
     val get_latest_version: unit -> OM.t t
     val sync_next_version: ?v:OM.t -> OM.t t
     val liftLwt: 'a Lwt.t -> 'a t
     val pull_remote: string -> unit t
-    val fork_remote: string -> unit t
   end
 
   module Vpst : VPST = struct
@@ -301,13 +301,22 @@ module MakeVersioned (Config: Config)  = struct
           | Ok _ -> Lwt.return ((),st)
           | Error _ -> failwith "Error while pulling the remote")
 
-    let fork_remote remote_uri = fun (st: st) ->
+    let with_remote_version_do remote_uri m = 
+      Lwt_main.run 
+        begin
+          BC_store.init () >>= fun repo -> 
+          BC_store.master repo >>= fun m_br -> 
+          let remote = Irmin.remote_uri remote_uri in
+          BC_store.Sync.pull m_br remote `Set >>= fun res ->
+          (match res with
+              | Ok _ -> Lwt.return ()
+              | Error _ -> failwith "Error while \
+                                     \pulling the remote") >>= fun _ ->
+          BC_store.clone m_br "1_local" >>= fun t_br ->
+          let st = {master=m_br; local=t_br; name="1"; next_id=1} in
+          m st >>= fun (a,_) -> Lwt.return a
+        end
       (* Fork master from remote master *)
-      let remote = Irmin.remote_uri remote_uri in
-      BC_store.Sync.pull st.master remote `Set >>= fun res ->
-      (match res with
-          | Ok _ -> Lwt.return ((),st)
-          | Error _ -> failwith "Error while pulling the remote")
 
     let sync_next_version ?v : OM.t t = fun (st: st) ->
       (* How do you commit the next version? Simply update path?
