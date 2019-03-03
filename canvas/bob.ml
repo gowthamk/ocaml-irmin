@@ -5,7 +5,7 @@ open Printf
 module U = struct
   let string_of_list f l = "[ " ^ List.fold_left (fun a b -> a ^ (f b) ^ "; ") "" l ^ "]"
 
-  let print_header h = Printf.printf "%s" ("\n" ^ h ^ "\n")
+  let print_header h = Printf.printf "%s\n" h
 
   let (>>=) = Lwt.Infix.(>>=)
 
@@ -18,7 +18,7 @@ end
 
 (* Canvas *)
 let _ =
-  U.print_header "Canvas"
+  (U.print_header "Canvas"; flush_all())
 
 module MkConfig (Vars: sig val root: string end) : Icanvas.Config = struct
   let root = Vars.root
@@ -51,9 +51,9 @@ let bob_f : unit Vpst.t =
    * Bob sets the rgb value of the pixel at (98,17) to
    * (23,23,23).
    *)
-  let c0' = M.set_px c0 loc @@ M.rgb @@ Char.chr 23 in
+  let c0' = M.set_px c0 loc @@ M.rgb 23l in
   (* Bob publishes his version *)
-  Vpst.sync_next_version ~v:c0'.M.t >>= fun t1 ->
+  Vpst.sync_next_version ~v:c0'.M.t [] >>= fun t1 ->
   Vpst.liftLwt @@ 
     Lwt_io.printf "1. Bob published <98,17>\n" >>= fun () ->
   let loc = {M.x=45; M.y=78} in
@@ -62,7 +62,7 @@ let bob_f : unit Vpst.t =
    * Bob now colors (45,78) pixel with an rgb value of
    * (111,111,111).
    *)
-  let c1' = M.set_px c1 loc @@ M.rgb @@ Char.chr 111 in
+  let c1' = M.set_px c1 loc @@ M.rgb 111l in
   (*Vpst.liftLwt @@ Lwt_unix.sleep 1.0 >>= fun () ->*)
   loop_until_y "6. Sync with Alice?" >>= fun () ->
   (* 
@@ -72,7 +72,7 @@ let bob_f : unit Vpst.t =
    * is the overlap of both colors.
    *)
   Vpst.pull_remote alice_uri >>= fun () -> 
-  Vpst.sync_next_version ~v:c1'.M.t >>= fun t2 ->
+  Vpst.sync_next_version ~v:c1'.M.t [] >>= fun t2 ->
   Vpst.liftLwt @@ 
     Lwt_io.printf "7. Bob merged & published <45,78>\n" >>= fun () ->
   let _ = Printf.printf "Bob: \n" in

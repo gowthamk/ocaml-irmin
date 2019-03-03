@@ -5,7 +5,7 @@ open Printf
 module U = struct
   let string_of_list f l = "[ " ^ List.fold_left (fun a b -> a ^ (f b) ^ "; ") "" l ^ "]"
 
-  let print_header h = Printf.printf "%s" ("\n" ^ h ^ "\n")
+  let print_header h = Printf.printf "%s\n" h
 
   let (>>=) = Lwt.Infix.(>>=)
 
@@ -18,7 +18,7 @@ end
 
 (* Canvas *)
 let _ =
-  U.print_header "Canvas"
+  (U.print_header "Canvas"; flush_all())
 
 module MkConfig (Vars: sig val root: string end) : Icanvas.Config = struct
   let root = Vars.root
@@ -52,9 +52,9 @@ let alice_f : unit Vpst.t =
    * Alice sets the rgb value of the pixel at (93,127) to
    * (23,23,23).
    *)
-  let c0' = M.set_px c0 loc @@ M.rgb @@ Char.chr 23 in
+  let c0' = M.set_px c0 loc @@ M.rgb 23l in
   loop_until_y "2. Is Bob ready?" >>= fun () ->
-  Vpst.sync_next_version ~v:c0'.M.t >>= fun t1 ->
+  Vpst.sync_next_version ~v:c0'.M.t [] >>= fun t1 ->
   Vpst.liftLwt @@ 
     Lwt_io.printf "3. Alice published <93,127>\n" >>= fun () ->
   (* Alice syncs with Bob. Sees Bob's coloring at (98,17) pixel. *)
@@ -67,8 +67,8 @@ let alice_f : unit Vpst.t =
   (*
    * Alice now sets the color of (45,78) pixel to 17.
    *)
-  let c1' = M.set_px c1 loc @@ M.rgb @@ Char.chr 17 in
-  Vpst.sync_next_version ~v:c1'.M.t >>= fun t2 ->
+  let c1' = M.set_px c1 loc @@ M.rgb 17l in
+  Vpst.sync_next_version ~v:c1'.M.t [] >>= fun t2 ->
   Vpst.liftLwt @@ 
     Lwt_io.printf "5. Alice published <45,78>\n" >>= fun () ->
   (*Vpst.liftLwt @@ Lwt_unix.sleep 0.1 >>= fun () ->*)
