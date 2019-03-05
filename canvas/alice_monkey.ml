@@ -72,7 +72,7 @@ let do_an_oper t =
 
 let comp_time = ref 0.0
 
-let merge_time = ref 0.0
+let sync_time = ref 0.0
 
 let loop_iter i (pre: M.t Vpst.t) : M.t Vpst.t = 
   pre >>= fun t ->
@@ -82,8 +82,8 @@ let loop_iter i (pre: M.t Vpst.t) : M.t Vpst.t =
   Vpst.sync_next_version ~v:c'.M.t uris >>= fun v ->
   let t3 = Sys.time () in
   begin 
-    comp_time := t2 -. t1;
-    merge_time := t3 -. t2;
+    comp_time := !comp_time +. (t2 -. t1);
+    sync_time := !sync_time +. (t3 -. t2);
     Vpst.return v
   end
 
@@ -96,7 +96,8 @@ let alice_f : unit Vpst.t =
   main_loop >>= fun v ->
   let _ = printf "Done\n" in 
   let _ = printf "Computational time: %fs\n" !comp_time in
-  let _ = printf "Merge time: %fs\n" !merge_time in
+  let _ = printf "Merge time: %fs\n" !MInit.merge_time in
+  let _ = printf "Sync time: %fs\n" !sync_time in
   Vpst.return ()
 
 let main () =

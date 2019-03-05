@@ -131,6 +131,9 @@ struct
       val of_adt : Canvas.t -> t Lwt.t
       val to_adt : t -> Canvas.t Lwt.t
     end
+
+  let merge_time = ref 0.0
+
   module BC_value =
     (struct
        include AO_value
@@ -168,14 +171,18 @@ struct
          if v1 = v2 then Irmin.Merge.ok v1
          else
            begin 
+             let t1 = Sys.time () in
              let open Irmin.Merge.Infix in
              let _ = printf "Merge called\n" in
+             let _ = flush_all() in
              old() >>=* fun old ->
              to_adt (from_just old "merge") >>= fun oldv ->
              to_adt v1 >>= fun v1 ->
              to_adt v2 >>= fun v2 ->
              let v = OM.merge oldv v1 v2 in
              of_adt v >>= fun merged_v -> 
+             let t2 = Sys.time () in
+             let _ = merge_time := !merge_time +. (t2-.t1) in
              Irmin.Merge.ok merged_v
            end
 
@@ -309,7 +316,7 @@ struct
         unit t)
       let get_latest_version () =
         (fun (st : st) ->
-           (BC_store.read st.local path) >>=
+           (BC_store.read st.master (*st.local*) path) >>=
              (fun (vop : BC_value.t option) ->
                 let v = from_just vop "get_latest_version" in
                 (BC_value.to_adt v) >>= (fun td -> Lwt.return (td, st))) : 
@@ -318,9 +325,11 @@ struct
         try
           let cinfo =
             info
-              (Printf.sprintf "Merging remote(%s) to local master"
+              (Printf.sprintf "Merging remote(%s) to master"
                  remote_uri) in
           let remote = Irmin.remote_uri remote_uri in
+          let _ = printf "Pulling from %s\n" remote_uri in
+          let _ = flush_all () in
           (BC_store.Sync.pull st.master remote (`Merge cinfo)) >>=
             (fun res ->
                match res with
@@ -363,16 +372,14 @@ struct
 
       let sync_next_version ?v (uris:string list) = fun (st:st) ->
         try
-          (* 1. Commit to the local branch *)
+          (* 1. Commit to the master (* local*) branch *)
           (match v with 
            | None -> Lwt.return ()
            | Some v -> 
              BC_value.of_adt v >>= fun v' -> 
              BC_store.update ~msg:"Committing local state" 
-                             st.local path v') >>= fun () ->
-          (* 2. Pull remotes to local master *)
-          let _ = printf "Before pull_remote\n" in
-          let _ = flush_all () in
+                           st.master (*st.local*) path v') >>= fun () ->
+          (* 2. Pull remotes to master *)
           let pull_vpst = List.fold_left 
               (fun (pre: unit t) uri -> 
                 bind pre 
@@ -381,12 +388,14 @@ struct
                       return ()))) 
               (return ()) uris in
           pull_vpst st >>= fun ((),st') ->
+          (*
           (* 3. Merge local master to the local branch *)
           let cinfo = info "Merging master into local" in
           BC_store.merge st'.master ~into:st'.local ~info:cinfo >>= fun _ ->
           (* 4. Merge local branch to the local master *)
           let cinfo = info "Merging local into master" in
           BC_store.merge st'.local ~into:st'.master ~info:cinfo >>= fun _ ->
+          *)
           get_latest_version () st'
         with _ -> failwith "Some error occured"
         

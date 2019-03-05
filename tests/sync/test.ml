@@ -3,13 +3,24 @@ open Irmin_unix
 open Printf
 
 module StoreVal = struct
-  type t = string
+  type t = {x: int32}
 
-  let t = Irmin.Type.string
+  let t = 
+    let open Irmin.Type in
+    record "t" (fun x -> {x})
+    |+ field "x" int32 (fun p -> p.x)
+    |> sealr
 
-  let pp = Fmt.string
+  let pp = (* Fmt.string *)
+    Irmin.Type.pp_json ~minify:false t
 
-  let of_string s = Ok s
+  let of_string s = (* Ok s *)
+    let decoder = Jsonm.decoder (`String s) in
+    let res = Irmin.Type.decode_json t decoder in
+    let _ = match res with
+      | Ok _ -> printf "Result Ok\n"
+      | Error (`Msg s) -> printf "Result Error: %s\n" s in
+    res
 
   let merge ~old v1 v2 = Irmin.Merge.ok v2 
 
@@ -48,7 +59,7 @@ let clean () = Sys.command "rm -rf /tmp/repos/sync_test.git"
 let set_init_version () = Lwt_main.run
   begin 
     Store.master repo >>= fun m_br ->
-    Store.set m_br path "Hello World\n"
+    Store.set m_br path (*"Hello World\n"*) {x=0l}
         ~info:(info "initial version")
   end
 
