@@ -93,58 +93,37 @@ struct
         let level = Irmin.Private.Conf.get config level in
         G.create ?root ?level ()
       let create () = create @@ (Irmin_git.config Config.root)
-      let on_add = ref (fun k -> fun v -> Lwt.return ())
+      let on_add = ref (fun k v -> printf "%s\n" 
+                                     (Fmt.to_to_string K.pp k); 
+                                   Lwt.return ())
       let add t v =
         (S.add t v) >>=
           (fun k -> ((!on_add) k v) >>= (fun _ -> Lwt.return k))
-      let rec add_adt t (a : Canvas.t) =
-        ((add t) =<<
-           (match a with
-            | Canvas.B a0 ->
-                (match a0 with
-                 | { tl_t; tr_t; bl_t; br_t;_} ->
-                     (add_adt t tl_t) >>=
-                       ((fun tl_t' ->
-                           (add_adt t tr_t) >>=
-                             (fun tr_t' ->
-                                (add_adt t bl_t) >>=
-                                  (fun bl_t' ->
-                                     (add_adt t br_t) >>=
-                                       (fun br_t' ->
-                                          Lwt.return @@
-                                            {
-                                              tl_t = tl_t';
-                                              tr_t = tr_t';
-                                              bl_t = bl_t';
-                                              br_t = br_t'
-                                            }))))))
-                  >>= ((fun a0' -> Lwt.return @@ (B a0')))
-            | Canvas.N a0 -> Lwt.return @@ (N a0)) : K.t Lwt.t)
-      let rec read_adt t (k : K.t) =
-        ((find t k) >>=
-           (fun aop ->
-              let a = from_just aop "to_adt" in
-              match a with
-              | B a0 ->
-                  (match a0 with
-                   | { tl_t; tr_t; bl_t; br_t;_} ->
-                       (read_adt t tl_t) >>=
-                         ((fun tl_t' ->
-                             (read_adt t tr_t) >>=
-                               (fun tr_t' ->
-                                  (read_adt t bl_t) >>=
-                                    (fun bl_t' ->
-                                       (read_adt t br_t) >>=
-                                         (fun br_t' ->
-                                            Lwt.return @@
-                                              {
-                                                Canvas.tl_t = tl_t';
-                                                Canvas.tr_t = tr_t';
-                                                Canvas.bl_t = bl_t';
-                                                Canvas.br_t = br_t'
-                                              }))))))
-                    >>= ((fun a0' -> Lwt.return @@ (Canvas.B a0')))
-              | N a0 -> Lwt.return @@ (Canvas.N a0)) : Canvas.t Lwt.t)
+
+     let rec add_adt t (a:OM.t) : K.t Lwt.t =
+       add t =<<
+         (match a with
+          | OM.N {r;g;b} -> Lwt.return @@ N {r;g;b}
+          | OM.B {tl_t;tr_t;bl_t;br_t} -> 
+            (add_adt t tl_t >>= fun tl_t' ->
+             add_adt t tr_t >>= fun tr_t' ->
+             add_adt t bl_t >>= fun bl_t' ->
+             add_adt t br_t >>= fun br_t' ->
+             Lwt.return @@ B {tl_t=tl_t'; tr_t=tr_t'; 
+                              bl_t=bl_t'; br_t=br_t'}))
+
+     let rec read_adt t (k:K.t) : OM.t Lwt.t =
+       find t k >>= fun aop ->
+       let a = from_just aop "to_adt" in
+       match a with
+         | N {r;g;b} -> Lwt.return @@ OM.N {r;g;b}
+         | B {tl_t;tr_t;bl_t;br_t} ->
+           (read_adt t tl_t >>= fun tl_t' ->
+            read_adt t tr_t >>= fun tr_t' ->
+            read_adt t bl_t >>= fun bl_t' ->
+            read_adt t br_t >>= fun br_t' ->
+            Lwt.return @@ OM.B {OM.tl_t=tl_t'; OM.tr_t=tr_t'; 
+                                OM.bl_t=bl_t'; OM.br_t=br_t'})
     end
   module type IRMIN_STORE_VALUE  =
     sig
@@ -155,74 +134,54 @@ struct
   module BC_value =
     (struct
        include AO_value
-       let of_adt (a : Canvas.t) =
-         ((AO_store.create ()) >>=
-            (fun ao_store ->
-               let aostore_add adt = AO_store.add_adt ao_store adt in
-               match a with
-               | Canvas.B a0 ->
-                   (match a0 with
-                    | { tl_t; tr_t; bl_t; br_t;_} ->
-                        (aostore_add tl_t) >>=
-                          ((fun tl_t' ->
-                              (aostore_add tr_t) >>=
-                                (fun tr_t' ->
-                                   (aostore_add bl_t) >>=
-                                     (fun bl_t' ->
-                                        (aostore_add br_t) >>=
-                                          (fun br_t' ->
-                                             Lwt.return @@
-                                               {
-                                                 tl_t = tl_t';
-                                                 tr_t = tr_t';
-                                                 bl_t = bl_t';
-                                                 br_t = br_t'
-                                               }))))))
-                     >>= ((fun a0' -> Lwt.return @@ (B a0')))
-               | Canvas.N a0 -> Lwt.return @@ (N a0)) : t Lwt.t)
-       let to_adt (t : t) =
-         ((AO_store.create ()) >>=
-            (fun ao_store ->
-               let aostore_read k = AO_store.read_adt ao_store k in
-               match t with
-               | B a0 ->
-                   (match a0 with
-                    | { tl_t; tr_t; bl_t; br_t;_} ->
-                        (aostore_read tl_t) >>=
-                          ((fun tl_t' ->
-                              (aostore_read tr_t) >>=
-                                (fun tr_t' ->
-                                   (aostore_read bl_t) >>=
-                                     (fun bl_t' ->
-                                        (aostore_read br_t) >>=
-                                          (fun br_t' ->
-                                             Lwt.return @@
-                                               {
-                                                 Canvas.tl_t = tl_t';
-                                                 Canvas.tr_t = tr_t';
-                                                 Canvas.bl_t = bl_t';
-                                                 Canvas.br_t = br_t'
-                                               }))))))
-                     >>= ((fun a0' -> Lwt.return @@ (Canvas.B a0')))
-               | N a0 -> Lwt.return @@ (Canvas.N a0)) : Canvas.t Lwt.t)
+
+       let of_adt (a:OM.t) : t Lwt.t  =
+         AO_store.create () >>= fun ao_store -> 
+         let aostore_add adt =
+           AO_store.add_adt ao_store adt in
+         match a with
+          | OM.N {r;g;b} -> Lwt.return @@ N {r;g;b}
+          | OM.B {tl_t;tr_t;bl_t;br_t} -> 
+            (aostore_add tl_t >>= fun tl_t' ->
+             aostore_add tr_t >>= fun tr_t' ->
+             aostore_add bl_t >>= fun bl_t' ->
+             aostore_add br_t >>= fun br_t' ->
+             Lwt.return @@ B {tl_t=tl_t'; tr_t=tr_t'; 
+                              bl_t=bl_t'; br_t=br_t'})
+
+       let to_adt (t:t) : OM.t Lwt.t =
+         AO_store.create () >>= fun ao_store ->
+         let aostore_read k =
+           AO_store.read_adt ao_store k in
+         match t with
+           | N {r;g;b} -> Lwt.return @@ OM.N {r;g;b}
+           | B {tl_t;tr_t;bl_t;br_t} ->
+             (aostore_read tl_t >>= fun tl_t' ->
+              aostore_read tr_t >>= fun tr_t' ->
+              aostore_read bl_t >>= fun bl_t' ->
+              aostore_read br_t >>= fun br_t' ->
+              Lwt.return @@ OM.B {OM.tl_t=tl_t'; OM.tr_t=tr_t'; 
+                                  OM.bl_t=bl_t'; OM.br_t=br_t'})
+
        let rec merge ~old:(old : t Irmin.Merge.promise)  (v1 : t)
          (v2 : t) =
-         let open Irmin.Merge.Infix in
-         let _ = printf "Merge called\n" in
-           (old ()) >>=*
-             (fun old ->
-                (to_adt (from_just old "merge")) >>=
-                  (fun oldv ->
-                     (to_adt v1) >>=
-                       (fun v1 ->
-                          (to_adt v2) >>=
-                            (fun v2 ->
-                               let v = OM.merge oldv v1 v2 in
-                               (of_adt v) >>=
-                                 (fun merged_v ->
-                                    Irmin.Merge.ok merged_v)))))
+         if v1 = v2 then Irmin.Merge.ok v1
+         else
+           begin 
+             let open Irmin.Merge.Infix in
+             let _ = printf "Merge called\n" in
+             old() >>=* fun old ->
+             to_adt (from_just old "merge") >>= fun oldv ->
+             to_adt v1 >>= fun v1 ->
+             to_adt v2 >>= fun v2 ->
+             let v = OM.merge oldv v1 v2 in
+             of_adt v >>= fun merged_v -> 
+             Irmin.Merge.ok merged_v
+           end
+
        let merge = let open Irmin.Merge in option (v t merge)
      end : (IRMIN_STORE_VALUE with type  t =  madt))
+
   module BC_store =
     struct
       module Store = (Irmin_unix.Git.FS.KV)(BC_value)
@@ -238,13 +197,26 @@ struct
       let merge s ~into  = Store.merge s ~into
       let read t (p : path) = Store.find t p
       let string_of_path p = String.concat "/" p
-      let info s = Irmin_unix.info "[repo %s] %s" Config.root s
+      let info s = Irmin_unix.info "[repo %s] %s" Config.root s;;
+
+      AO_store.on_add := fun k v ->
+        begin
+          init () >>= fun repo -> 
+          master repo >>= fun m_br ->
+          let sha_str = Fmt.to_to_string Irmin.Hash.SHA1.pp k in
+          let fname_k = String.sub sha_str 0 7 in
+          let path_k = [fname_k] in
+          let msg = sprintf "Setting %s" fname_k in
+          Store.set m_br path_k v ~info:(info msg)
+        end
+
       let rec update ?msg  t (p : path) (v : BC_value.t) =
         let msg =
           match msg with
           | Some s -> s
           | None -> "Setting " ^ (string_of_path p) in
-        let fname_of_hash hsh =
+        Store.set t p v ~info:(info msg)
+        (*let fname_of_hash hsh =
           String.sub (Fmt.to_to_string Irmin.Hash.SHA1.pp hsh) 0 7 in
         let link_to_tree k =
           (AO_store.create ()) >>=
@@ -263,7 +235,7 @@ struct
                     (Lwt.return()) [tl_t; tr_t; bl_t; br_t])
                >>= ((fun a0' -> Lwt.return()))
          | N a0 -> Lwt.return()) >>=
-          (fun () -> Store.set t p v ~info:(info msg))
+          (fun () -> Store.set t p v ~info:(info msg))*)
     end
   module Vpst :
     sig
