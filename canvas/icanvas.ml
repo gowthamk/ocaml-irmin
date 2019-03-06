@@ -100,30 +100,48 @@ struct
         (S.add t v) >>=
           (fun k -> ((!on_add) k v) >>= (fun _ -> Lwt.return k))
 
-     let rec add_adt t (a:OM.t) : K.t Lwt.t =
-       add t =<<
-         (match a with
-          | OM.N {r;g;b} -> Lwt.return @@ N {r;g;b}
-          | OM.B {tl_t;tr_t;bl_t;br_t} -> 
-            (add_adt t tl_t >>= fun tl_t' ->
-             add_adt t tr_t >>= fun tr_t' ->
-             add_adt t bl_t >>= fun bl_t' ->
-             add_adt t br_t >>= fun br_t' ->
-             Lwt.return @@ B {tl_t=tl_t'; tr_t=tr_t'; 
-                              bl_t=bl_t'; br_t=br_t'}))
+      module PHashtbl = Hashtbl.Make(struct 
+          type t = OM.t
+          let equal x y = x == y
+          let hash x = Hashtbl.hash_param 2 10 x
+        end)
 
-     let rec read_adt t (k:K.t) : OM.t Lwt.t =
-       find t k >>= fun aop ->
-       let a = from_just aop "to_adt" in
-       match a with
-         | N {r;g;b} -> Lwt.return @@ OM.N {r;g;b}
-         | B {tl_t;tr_t;bl_t;br_t} ->
-           (read_adt t tl_t >>= fun tl_t' ->
-            read_adt t tr_t >>= fun tr_t' ->
-            read_adt t bl_t >>= fun bl_t' ->
-            read_adt t br_t >>= fun br_t' ->
-            Lwt.return @@ OM.B {OM.tl_t=tl_t'; OM.tr_t=tr_t'; 
-                                OM.bl_t=bl_t'; OM.br_t=br_t'})
+      let (read_cache: (K.t, OM.t) Hashtbl.t) = Hashtbl.create 5051
+
+      let (write_cache: K.t PHashtbl.t) = PHashtbl.create 5051
+
+      let rec add_adt t (a:OM.t) : K.t Lwt.t =
+        try 
+          Lwt.return @@ PHashtbl.find write_cache a
+        with Not_found -> begin 
+          add t =<<
+            (match a with
+             | OM.N {r;g;b} -> Lwt.return @@ N {r;g;b}
+             | OM.B {tl_t;tr_t;bl_t;br_t} -> 
+               (add_adt t tl_t >>= fun tl_t' ->
+                add_adt t tr_t >>= fun tr_t' ->
+                add_adt t bl_t >>= fun bl_t' ->
+                add_adt t br_t >>= fun br_t' ->
+                Lwt.return @@ B {tl_t=tl_t'; tr_t=tr_t'; 
+                                 bl_t=bl_t'; br_t=br_t'}))
+        end
+
+      let rec read_adt t (k:K.t) : OM.t Lwt.t =
+        try 
+          Lwt.return @@ Hashtbl.find read_cache k
+        with Not_found -> begin 
+          find t k >>= fun aop ->
+          let a = from_just aop "to_adt" in
+          match a with
+            | N {r;g;b} -> Lwt.return @@ OM.N {r;g;b}
+            | B {tl_t;tr_t;bl_t;br_t} ->
+              (read_adt t tl_t >>= fun tl_t' ->
+               read_adt t tr_t >>= fun tr_t' ->
+               read_adt t bl_t >>= fun bl_t' ->
+               read_adt t br_t >>= fun br_t' ->
+               Lwt.return @@ OM.B {OM.tl_t=tl_t'; OM.tr_t=tr_t'; 
+                                   OM.bl_t=bl_t'; OM.br_t=br_t'})
+        end
     end
   module type IRMIN_STORE_VALUE  =
     sig
