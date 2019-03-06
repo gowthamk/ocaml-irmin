@@ -64,85 +64,90 @@ struct
                  ((IrminConvert.mknode madt),
                    (IrminConvert.mkmadt node)))
     end
-  module AO_value =
-    (struct
-       type t = madt
-       let t = IrminConvertTie.madt
-       let pp = Irmin.Type.pp_json ~minify:false t
-       let of_string s =
-         let decoder = Jsonm.decoder (`String s) in
-         let res =
-           try Irmin.Type.decode_json t decoder
-           with
-           | Invalid_argument s ->
-               failwith @@
-                 (Printf.sprintf
-                    "AO_Value.of_string: Invalid_argument: %s" s) in
-         res
-     end : (Irmin.Contents.Conv with type  t =  madt))
-  module AO_store =
-    struct
-      module S = ((Irmin_git.AO)(Git_unix.FS))(AO_value)
-      include S
-      let create config =
-        let level =
-          Irmin.Private.Conf.key ~doc:"The Zlib compression level."
-            "level" (let open Irmin.Private.Conf in some int) None in
-        let root =
-          Irmin.Private.Conf.get config Irmin.Private.Conf.root in
-        let level = Irmin.Private.Conf.get config level in
-        G.create ?root ?level ()
-      let create () = create @@ (Irmin_git.config Config.root)
-      let on_add = ref (fun k v -> printf "%s\n" 
-                                     (Fmt.to_to_string K.pp k); 
-                                   Lwt.return ())
-      let add t v =
-        (S.add t v) >>=
-          (fun k -> ((!on_add) k v) >>= (fun _ -> Lwt.return k))
+  module AO_value : (Irmin.Contents.Conv with type  t =  madt) =
+  struct
+    type t = madt
+    let t = IrminConvertTie.madt
+    let pp = Irmin.Type.pp_json ~minify:false t
+    let of_string s =
+      let decoder = Jsonm.decoder (`String s) in
+      let res =
+        try Irmin.Type.decode_json t decoder
+        with
+        | Invalid_argument s ->
+            failwith @@
+              (Printf.sprintf
+                 "AO_Value.of_string: Invalid_argument: %s" s) in
+      res
+  end
 
-      module PHashtbl = Hashtbl.Make(struct 
-          type t = OM.t
-          let equal x y = x == y
-          let hash x = Hashtbl.hash_param 2 10 x
-        end)
+  module AO_store = 
+  struct
+    module S = Irmin_git.AO(Git_unix.FS)(AO_value)
+    include S
 
-      let (read_cache: (K.t, OM.t) Hashtbl.t) = Hashtbl.create 5051
+    let create config =
+      let level =
+        Irmin.Private.Conf.key ~doc:"The Zlib compression level."
+          "level" (let open Irmin.Private.Conf in some int) None in
+      let root =
+        Irmin.Private.Conf.get config Irmin.Private.Conf.root in
+      let level = Irmin.Private.Conf.get config level in
+      G.create ?root ?level ()
 
-      let (write_cache: K.t PHashtbl.t) = PHashtbl.create 5051
+    let create () = create @@ (Irmin_git.config Config.root)
 
-      let rec add_adt t (a:OM.t) : K.t Lwt.t =
-        try 
-          Lwt.return @@ PHashtbl.find write_cache a
-        with Not_found -> begin 
-          add t =<<
-            (match a with
-             | OM.N {r;g;b} -> Lwt.return @@ N {r;g;b}
-             | OM.B {tl_t;tr_t;bl_t;br_t} -> 
-               (add_adt t tl_t >>= fun tl_t' ->
-                add_adt t tr_t >>= fun tr_t' ->
-                add_adt t bl_t >>= fun bl_t' ->
-                add_adt t br_t >>= fun br_t' ->
-                Lwt.return @@ B {tl_t=tl_t'; tr_t=tr_t'; 
-                                 bl_t=bl_t'; br_t=br_t'}))
-        end
+    let on_add = ref (fun k v -> printf "%s\n" 
+                                   (Fmt.to_to_string K.pp k); 
+                                 Lwt.return ())
+    let add t v =
+      (S.add t v) >>=
+        (fun k -> ((!on_add) k v) >>= (fun _ -> Lwt.return k))
 
-      let rec read_adt t (k:K.t) : OM.t Lwt.t =
-        try 
-          Lwt.return @@ Hashtbl.find read_cache k
-        with Not_found -> begin 
-          find t k >>= fun aop ->
-          let a = from_just aop "to_adt" in
-          match a with
-            | N {r;g;b} -> Lwt.return @@ OM.N {r;g;b}
-            | B {tl_t;tr_t;bl_t;br_t} ->
-              (read_adt t tl_t >>= fun tl_t' ->
-               read_adt t tr_t >>= fun tr_t' ->
-               read_adt t bl_t >>= fun bl_t' ->
-               read_adt t br_t >>= fun br_t' ->
-               Lwt.return @@ OM.B {OM.tl_t=tl_t'; OM.tr_t=tr_t'; 
-                                   OM.bl_t=bl_t'; OM.br_t=br_t'})
-        end
-    end
+    module PHashtbl = Hashtbl.Make(struct 
+        type t = OM.t
+        let equal x y = x == y
+        let hash x = Hashtbl.hash_param 2 10 x
+      end)
+
+    let (read_cache: (K.t, OM.t) Hashtbl.t) = Hashtbl.create 5051
+
+    let (write_cache: K.t PHashtbl.t) = PHashtbl.create 5051
+
+    let rec add_adt t (a:OM.t) : K.t Lwt.t =
+      try 
+        Lwt.return @@ PHashtbl.find write_cache a
+      with Not_found -> begin 
+        add t =<<
+          (match a with
+           | OM.N {r;g;b} -> Lwt.return @@ N {r;g;b}
+           | OM.B {tl_t;tr_t;bl_t;br_t} -> 
+             (add_adt t tl_t >>= fun tl_t' ->
+              add_adt t tr_t >>= fun tr_t' ->
+              add_adt t bl_t >>= fun bl_t' ->
+              add_adt t br_t >>= fun br_t' ->
+              Lwt.return @@ B {tl_t=tl_t'; tr_t=tr_t'; 
+                               bl_t=bl_t'; br_t=br_t'}))
+      end
+
+    let rec read_adt t (k:K.t) : OM.t Lwt.t =
+      try 
+        Lwt.return @@ Hashtbl.find read_cache k
+      with Not_found -> begin 
+        find t k >>= fun aop ->
+        let a = from_just aop "to_adt" in
+        match a with
+          | N {r;g;b} -> Lwt.return @@ OM.N {r;g;b}
+          | B {tl_t;tr_t;bl_t;br_t} ->
+            (read_adt t tl_t >>= fun tl_t' ->
+             read_adt t tr_t >>= fun tr_t' ->
+             read_adt t bl_t >>= fun bl_t' ->
+             read_adt t br_t >>= fun br_t' ->
+             Lwt.return @@ OM.B {OM.tl_t=tl_t'; OM.tr_t=tr_t'; 
+                                 OM.bl_t=bl_t'; OM.br_t=br_t'})
+      end
+  end
+
   module type IRMIN_STORE_VALUE  =
     sig
       include Irmin.Contents.S
