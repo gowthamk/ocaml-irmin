@@ -97,6 +97,11 @@ let alice_f : unit Vpst.t =
   let _ = printf "Done\n" in 
   let _ = printf "Computational time: %fs\n" !comp_time in
   let _ = printf "Merge time: %fs\n" !MInit.merge_time in
+  let _ = printf "Number of merges: %d\n" !MInit.merge_count in
+  let _ = printf "Average merge time: %fs\n" 
+            (if !MInit.merge_count > 0 
+             then (!MInit.merge_time)/.(float !MInit.merge_count)
+             else 0.0) in
   let _ = printf "Sync time: %fs\n" !sync_time in
   Vpst.return ()
 

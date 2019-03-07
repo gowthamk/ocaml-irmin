@@ -81,6 +81,15 @@ struct
       res
   end
 
+  module type TAG_TREE = sig
+    type t
+    type tag
+    val tag_of_string: string -> tag
+    val tag_of_hash: K.t -> tag
+    val empty: unit -> t
+    val add: t -> tag -> AO_value.t -> t Lwt.t
+  end
+
   module AO_store = 
   struct
     module S = Irmin_git.AO(Git_unix.FS)(AO_value)
@@ -97,12 +106,16 @@ struct
 
     let create () = create @@ (Irmin_git.config Config.root)
 
-    let on_add = ref (fun k v -> printf "%s\n" 
+    (*let on_add = ref (fun k v -> printf "%s\n" 
                                    (Fmt.to_to_string K.pp k); 
-                                 Lwt.return ())
-    let add t v =
-      (S.add t v) >>=
-        (fun k -> ((!on_add) k v) >>= (fun _ -> Lwt.return k))
+                                 Lwt.return ())*)
+
+    let add_and_link (type a) (module T:TAG_TREE with type t=a) 
+                     t v (tree:a) : (K.t*a) Lwt.t=
+      (S.add t v) >>= fun k ->
+      let tag = T.tag_of_hash k in
+      T.add tree tag v >>= fun tree' ->
+      Lwt.return (k,tree')
 
     module PHashtbl = Hashtbl.Make(struct 
         type t = OM.t
@@ -113,21 +126,32 @@ struct
     let (read_cache: (K.t, OM.t) Hashtbl.t) = Hashtbl.create 5051
 
     let (write_cache: K.t PHashtbl.t) = PHashtbl.create 5051
-
-    let rec add_adt t (a:OM.t) : K.t Lwt.t =
+        
+    let rec add_adt : type a. (module TAG_TREE with type t=a) -> t 
+                                -> OM.t -> (a -> (K.t*a) Lwt.t) =
+    fun  (module T) t (adt:OM.t) ->
+      (*
+       * We momentarily override Lwt's bind and return so as to pass
+       * the tree around without making a mess.
+       *)
+      let (>>=) m f = 
+        fun tr -> m tr >>= fun (a,tr') -> f a tr' in
+      let return x = fun tr -> Lwt.return (x,tr) in
       try 
-        Lwt.return @@ PHashtbl.find write_cache a
+        return  @@ PHashtbl.find write_cache adt
       with Not_found -> begin 
-        add t =<<
-          (match a with
-           | OM.N {r;g;b} -> Lwt.return @@ N {r;g;b}
-           | OM.B {tl_t;tr_t;bl_t;br_t} -> 
-             (add_adt t tl_t >>= fun tl_t' ->
-              add_adt t tr_t >>= fun tr_t' ->
-              add_adt t bl_t >>= fun bl_t' ->
-              add_adt t br_t >>= fun br_t' ->
-              Lwt.return @@ B {tl_t=tl_t'; tr_t=tr_t'; 
-                               bl_t=bl_t'; br_t=br_t'}))
+        let add_to_store (v:madt) = fun tr ->
+          add_and_link (module T:TAG_TREE with type t = a) t v tr in
+        let add_adt = add_adt (module T:TAG_TREE with type t = a) t in
+        match adt with
+         | OM.N {r;g;b} -> add_to_store @@ N {r;g;b}
+         | OM.B {tl_t;tr_t;bl_t;br_t} -> 
+             add_adt tl_t >>= fun tl_t' ->
+             add_adt tr_t >>= fun tr_t' ->
+             add_adt bl_t >>= fun bl_t' ->
+             add_adt br_t >>= fun br_t' ->
+             add_to_store @@ B {tl_t=tl_t'; tr_t=tr_t'; 
+                                bl_t=bl_t'; br_t=br_t'}
       end
 
     let rec read_adt t (k:K.t) : OM.t Lwt.t =
@@ -151,85 +175,164 @@ struct
   module type IRMIN_STORE_VALUE  =
     sig
       include Irmin.Contents.S
-      val of_adt : Canvas.t -> t Lwt.t
+      val of_adt : (module TAG_TREE with type t = 'a) -> 
+        Canvas.t -> 'a -> (t*'a) Lwt.t
       val to_adt : t -> Canvas.t Lwt.t
     end
 
+  module type IRMIN_STORE = 
+  sig
+    type t
+    type repo
+    type path = string list
+    type tree
+    module Sync:Irmin.SYNC with type db = t
+    module Tree: TAG_TREE with type t = tree
+    val init : ?root:'a -> ?bare:'b -> unit -> repo Lwt.t
+    val master : repo -> t Lwt.t
+    val clone : t -> string -> t Lwt.t
+    val get_branch : repo -> branch_name:string -> t Lwt.t
+    val merge : t ->
+      into:t ->
+      info:Irmin.Info.f -> (unit, Irmin.Merge.conflict) result Lwt.t
+    val read : t -> path -> madt option Lwt.t
+    val info : string -> Irmin.Info.f
+    val update : ?msg:string -> t -> path -> madt -> unit Lwt.t
+    val with_tree : t -> path -> info:Irmin.Info.f ->
+                    (tree option -> tree option Lwt.t) -> unit Lwt.t
+  end
+
   let merge_time = ref 0.0
+  let merge_count = ref 0
 
-  module BC_value =
-    (struct
-       include AO_value
+  module rec BC_value : (IRMIN_STORE_VALUE with type  t =  madt) =
+  struct
+    include AO_value
 
-       let of_adt (a:OM.t) : t Lwt.t  =
-         AO_store.create () >>= fun ao_store -> 
-         let aostore_add adt =
-           AO_store.add_adt ao_store adt in
-         match a with
-          | OM.N {r;g;b} -> Lwt.return @@ N {r;g;b}
-          | OM.B {tl_t;tr_t;bl_t;br_t} -> 
-            (aostore_add tl_t >>= fun tl_t' ->
-             aostore_add tr_t >>= fun tr_t' ->
-             aostore_add bl_t >>= fun bl_t' ->
-             aostore_add br_t >>= fun br_t' ->
-             Lwt.return @@ B {tl_t=tl_t'; tr_t=tr_t'; 
-                              bl_t=bl_t'; br_t=br_t'})
+    let of_adt : type a. (module TAG_TREE with type t = a) -> OM.t
+                         -> a -> (t*a) Lwt.t = fun (module T) adt ->
+     (*
+      * Momentarily overriding Lwt's bind and return with our own
+      * bind and return to pass around the tree.
+      *)
+     let return x = fun tr -> Lwt.return (x,tr) in
+     let lift m = fun tr -> m >>= fun x -> Lwt.return (x,tr) in
+     let (>>=) m f = 
+       fun tr -> m tr >>= fun (a,tr') -> f a tr' in
+     lift (AO_store.create ()) >>= fun ao_store -> 
+     let aostore_add =
+       AO_store.add_adt (module T) ao_store in
+     match adt with
+      | OM.N {r;g;b} -> return @@ N {r;g;b}
+      | OM.B {tl_t;tr_t;bl_t;br_t} -> 
+        (aostore_add tl_t >>= fun tl_t' ->
+         aostore_add tr_t >>= fun tr_t' ->
+         aostore_add bl_t >>= fun bl_t' ->
+         aostore_add br_t >>= fun br_t' ->
+         return @@ B {tl_t=tl_t'; tr_t=tr_t'; 
+                      bl_t=bl_t'; br_t=br_t'})
 
-       let to_adt (t:t) : OM.t Lwt.t =
-         AO_store.create () >>= fun ao_store ->
-         let aostore_read k =
-           AO_store.read_adt ao_store k in
-         match t with
-           | N {r;g;b} -> Lwt.return @@ OM.N {r;g;b}
-           | B {tl_t;tr_t;bl_t;br_t} ->
-             (aostore_read tl_t >>= fun tl_t' ->
-              aostore_read tr_t >>= fun tr_t' ->
-              aostore_read bl_t >>= fun bl_t' ->
-              aostore_read br_t >>= fun br_t' ->
-              Lwt.return @@ OM.B {OM.tl_t=tl_t'; OM.tr_t=tr_t'; 
-                                  OM.bl_t=bl_t'; OM.br_t=br_t'})
+    let to_adt (t:t) : OM.t Lwt.t =
+      AO_store.create () >>= fun ao_store ->
+      let aostore_read k =
+        AO_store.read_adt ao_store k in
+      match t with
+        | N {r;g;b} -> Lwt.return @@ OM.N {r;g;b}
+        | B {tl_t;tr_t;bl_t;br_t} ->
+          (aostore_read tl_t >>= fun tl_t' ->
+           aostore_read tr_t >>= fun tr_t' ->
+           aostore_read bl_t >>= fun bl_t' ->
+           aostore_read br_t >>= fun br_t' ->
+           Lwt.return @@ OM.B {OM.tl_t=tl_t'; OM.tr_t=tr_t'; 
+                               OM.bl_t=bl_t'; OM.br_t=br_t'})
 
-       let rec merge ~old:(old : t Irmin.Merge.promise)  (v1 : t)
-         (v2 : t) =
-         if v1 = v2 then Irmin.Merge.ok v1
-         else
-           begin 
-             let t1 = Sys.time () in
-             let open Irmin.Merge.Infix in
-             let _ = printf "Merge called\n" in
-             let _ = flush_all() in
-             old() >>=* fun old ->
-             to_adt (from_just old "merge") >>= fun oldv ->
-             to_adt v1 >>= fun v1 ->
-             to_adt v2 >>= fun v2 ->
-             let v = OM.merge oldv v1 v2 in
-             of_adt v >>= fun merged_v -> 
-             let t2 = Sys.time () in
-             let _ = merge_time := !merge_time +. (t2-.t1) in
-             Irmin.Merge.ok merged_v
-           end
+    let rec merge ~old:(old : t Irmin.Merge.promise)  (v1 : t)
+      (v2 : t) =
+      if v1 = v2 then Irmin.Merge.ok v1
+      else
+        begin 
+          let t1 = Sys.time () in
+          let open Irmin.Merge.Infix in
+          let _ = printf "Merge called\n" in
+          let _ = flush_all() in
+          let merged_v = ref v1 in (* Hack! see below. *)
+          old() >>=* fun old ->
+          to_adt (from_just old "merge") >>= fun oldv ->
+          to_adt v1 >>= fun v1 ->
+          to_adt v2 >>= fun v2 ->
+          let v = OM.merge oldv v1 v2 in
+          BC_store.init () >>= fun repo ->
+          BC_store.master repo >>= fun t ->
+          BC_store.with_tree t ["state"]
+            ~info:(BC_store.info "merging")
+            begin fun trop ->
+              let tr = from_just trop "merge.trop" in
+              let tmod = (module BC_store.Tree : 
+                           TAG_TREE with type t = BC_store.tree) in
+              of_adt tmod v tr >>= fun (v',tr') ->
+              let _ = merged_v := v' in
+              Lwt.return @@ Some tr'
+            end >>= fun () ->
+          let t2 = Sys.time () in
+          let _ = merge_time := !merge_time +. (t2-.t1) in
+          let _ = merge_count := !merge_count + 1 in
+          Irmin.Merge.ok !merged_v
+        end
 
-       let merge = let open Irmin.Merge in option (v t merge)
-     end : (IRMIN_STORE_VALUE with type  t =  madt))
+    let merge = let open Irmin.Merge in option (v t merge)
+  end
 
-  module BC_store =
+  and BC_store : IRMIN_STORE =
     struct
-      module Store = (Irmin_unix.Git.FS.KV)(BC_value)
-      module Sync = (Irmin.Sync)(Store)
+      module Store = Irmin_unix.Git.FS.KV(BC_value)
+      module Sync = Irmin.Sync(Store)
+
+      module Tree = 
+        struct
+          type t = Store.tree
+
+          type tag = string list
+
+          let empty () = Store.Tree.empty
+
+          let tag_of_string str = [str]
+
+          let tag_of_hash k = 
+            let sha_str = Fmt.to_to_string Irmin.Hash.SHA1.pp k in
+            let fname_k = String.sub sha_str 0 7 in
+              [fname_k]
+
+          let add t k v = Store.Tree.add t k v
+        end
+
       type t = Store.t
+      type repo = Store.repo
+      type tree = Store.tree
       type path = string list
+
       let init ?root  ?bare  () =
         let config = Irmin_git.config Config.root in
         Store.Repo.v config
+
       let master (repo : Store.repo) = Store.master repo
+
       let clone t name = Store.clone t name
+
       let get_branch r ~branch_name  = Store.of_branch r branch_name
+
       let merge s ~into  = Store.merge s ~into
+
       let read t (p : path) = Store.find t p
+
       let string_of_path p = String.concat "/" p
+
       let info s = Irmin_unix.info "[repo %s] %s" Config.root s;;
 
-      AO_store.on_add := fun k v ->
+      let with_tree t path ~info f = Store.with_tree t path f
+                                      ~info:info
+                                      ~strategy:`Set
+
+      (*AO_store.on_add := fun k v ->
         begin
           init () >>= fun repo -> 
           master repo >>= fun m_br ->
@@ -238,7 +341,7 @@ struct
           let path_k = [fname_k] in
           let msg = sprintf "Setting %s" fname_k in
           Store.set m_br path_k v ~info:(info msg)
-        end
+        end*)
 
       let rec update ?msg  t (p : path) (v : BC_value.t) =
         let msg =
@@ -246,27 +349,8 @@ struct
           | Some s -> s
           | None -> "Setting " ^ (string_of_path p) in
         Store.set t p v ~info:(info msg)
-        (*let fname_of_hash hsh =
-          String.sub (Fmt.to_to_string Irmin.Hash.SHA1.pp hsh) 0 7 in
-        let link_to_tree k =
-          (AO_store.create ()) >>=
-            (fun ao_store ->
-               (AO_store.find ao_store k) >>=
-                 (fun vop ->
-                    let v_k = from_just vop "BC_store.update" in
-                    let path_k = [fname_of_hash k] in
-                    update t path_k v_k)) in
-        (match v with
-         | B a0 ->
-             (match a0 with
-              | { tl_t; tr_t; bl_t; br_t;_} ->
-                  List.fold_left
-                    (fun m -> fun k -> m >>= (fun () -> link_to_tree k))
-                    (Lwt.return()) [tl_t; tr_t; bl_t; br_t])
-               >>= ((fun a0' -> Lwt.return()))
-         | N a0 -> Lwt.return()) >>=
-          (fun () -> Store.set t p v ~info:(info msg))*)
     end
+
   module Vpst :
     sig
       type 'a t
@@ -274,7 +358,7 @@ struct
       val bind : 'a t -> ('a -> 'b t) -> 'b t
       val with_init_version_do : Canvas.t -> 'a t -> 'a
       val with_remote_version_do : string -> 'a t -> 'a
-      val fork_version : 'a t -> unit t
+      (*val fork_version : 'a t -> unit t*)
       val get_latest_version : unit -> Canvas.t t
       val sync_next_version : ?v:Canvas.t -> string list -> Canvas.t t
       val liftLwt : 'a Lwt.t -> 'a t
@@ -285,65 +369,51 @@ struct
       type st =
         {
         master: store ;
-        local: store ;
         name: string ;
         next_id: int }
+
       type 'a t = st -> ('a * st) Lwt.t
+
       let info s = Irmin_unix.info "[repo %s] %s" Config.root s
-      let path = ["state"]
+
+      (*let path = ["state"]*)
+
       let return (x : 'a) = (fun st -> Lwt.return (x, st) : 'a t)
+
       let bind (m1 : 'a t) (f : 'a -> 'b t) =
         (fun st -> (m1 st) >>= (fun (a, st') -> f a st') : 'b t)
+
       let with_init_version_do (v : Canvas.t) (m : 'a t) =
         Lwt_main.run
-          ((BC_store.init ()) >>=
-             (fun repo ->
-                (BC_store.master repo) >>=
-                  (fun m_br ->
-                     (BC_value.of_adt v) >>=
-                       (fun (v' : BC_value.t) ->
-                          (BC_store.update ~msg:"initial version" m_br
-                             path v')
-                            >>=
-                            (fun () ->
-                               (BC_store.clone m_br "1_local") >>=
-                                 (fun t_br ->
-                                    let st =
-                                      {
-                                        master = m_br;
-                                        local = t_br;
-                                        name = "1";
-                                        next_id = 1
-                                      } in
-                                    (m st) >>=
-                                      (fun (a, _) -> Lwt.return a)))))))
-      let fork_version (m : 'a t) =
-        (fun (st : st) ->
-           let thread_f () =
-             let child_name =
-               st.name ^ ("_" ^ (string_of_int st.next_id)) in
-             let parent_m_br = st.master in
-             let m_br = parent_m_br in
-             (BC_store.clone m_br (child_name ^ "_local")) >>=
-               (fun t_br ->
-                  let new_st =
-                    {
-                      master = m_br;
-                      local = t_br;
-                      name = child_name;
-                      next_id = 1
-                    } in
-                  m new_st) in
-           Lwt.async thread_f;
-           Lwt.return ((), { st with next_id = (st.next_id + 1) }) : 
-        unit t)
+        begin 
+          BC_store.init () >>= fun repo ->
+          BC_store.master repo >>= fun m_br ->
+          BC_store.with_tree m_br ["state"]
+            ~info:(BC_store.info "Initial version")
+            begin fun trop ->
+              let module Tree = BC_store.Tree in
+              let tr = match trop with 
+                | Some tr -> tr
+                | None -> Tree.empty () in
+              let tmod = (module Tree : TAG_TREE 
+                           with type t = BC_store.tree) in
+              BC_value.of_adt tmod v tr >>= fun (v',tr') ->
+              let head_tag = Tree.tag_of_string "head" in
+              Tree.add tr' head_tag v' >>= fun tr'' ->
+              Lwt.return @@ Some tr''
+            end >>= fun () ->
+          let st = { master = m_br; name = "1"; next_id = 1 } in
+          m st >>= (fun (a, _) -> Lwt.return a)
+        end
+
       let get_latest_version () =
         (fun (st : st) ->
-           (BC_store.read st.master (*st.local*) path) >>=
+           (BC_store.read st.master (*st.local*) ["state"; "head"]) >>=
              (fun (vop : BC_value.t option) ->
                 let v = from_just vop "get_latest_version" in
                 (BC_value.to_adt v) >>= (fun td -> Lwt.return (td, st))) : 
         Canvas.t t)
+
       let pull_remote remote_uri (st : st) =
         try
           let cinfo =
@@ -381,12 +451,9 @@ struct
                                  "Error while pulling the remote")
                             >>=
                             (fun _ ->
-                               (BC_store.clone m_br "1_local") >>=
-                                 (fun t_br ->
-                                    let st =
+                                 (let st =
                                       {
                                         master = m_br;
-                                        local = t_br;
                                         name = "1";
                                         next_id = 1
                                       } in
@@ -395,13 +462,24 @@ struct
 
       let sync_next_version ?v (uris:string list) = fun (st:st) ->
         try
-          (* 1. Commit to the master (* local*) branch *)
+          (* 1. Commit to the master branch *)
           (match v with 
            | None -> Lwt.return ()
            | Some v -> 
-             BC_value.of_adt v >>= fun v' -> 
-             BC_store.update ~msg:"Committing local state" 
-                           st.master (*st.local*) path v') >>= fun () ->
+             BC_store.with_tree st.master ["state"]
+               ~info:(BC_store.info "setting latest version")
+               begin fun trop ->
+                 let module Tree = BC_store.Tree in
+                 let tr = match trop with
+                   | Some tr -> tr
+                   | None -> Tree.empty () in
+                  let tmod = (module Tree : TAG_TREE 
+                               with type t = BC_store.tree) in
+                  BC_value.of_adt tmod v tr >>= fun (v',tr') ->
+                  let head_tag = Tree.tag_of_string "head" in
+                  Tree.add tr' head_tag v' >>= fun tr'' ->
+                  Lwt.return @@ Some tr''
+               end) >>= fun () ->
           (* 2. Pull remotes to master *)
           let pull_vpst = List.fold_left 
               (fun (pre: unit t) uri -> 
@@ -425,4 +503,5 @@ struct
       let liftLwt (m : 'a Lwt.t) =
         (fun st -> m >>= (fun a -> Lwt.return (a, st)) : 'a t)
     end 
+
 end
