@@ -155,10 +155,10 @@ module Make  = struct
 
   (* merge is a recursive function which takes three arguments old, v1 and v2 *)
   let rec merge old v1 v2 = 
-    if v1=v2 then v1
+    (*if v1=v2 then v1
     else if v1=old then v2
     else if v2=old then v1
-    else match (old,v1,v2) with
+    else*) match (old,v1,v2) with
       (*
        * The first three rules isomorphize old, v1 and v2.
        *)

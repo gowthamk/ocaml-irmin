@@ -45,7 +45,7 @@ module MInit = Icanvas.MakeVersioned(CInit)
 module M = Canvas.Make
 module Vpst = MInit.Vpst
 
-let alice_uri = "git+ssh://opam@172.18.0.2/tmp/repos/canvas.git"
+let alice_uri = "git+ssh://opam@172.18.0.2/tmp/repos/canvas.git#master"
 
 let uris = [alice_uri]
 

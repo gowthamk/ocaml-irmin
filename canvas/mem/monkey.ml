@@ -45,9 +45,7 @@ module MInit = Icanvas.MakeVersioned(CInit)
 module M = Canvas.Make
 module Vpst = MInit.Vpst
 
-let seed = 564294298
-
-let canvas_size = 64
+let canvas_size = 512
 
 let (>>=) = Vpst.bind
 
@@ -70,17 +68,18 @@ let comp_time = ref 0.0
 
 let sync_time = ref 0.0
 
-let _ops_per_sync = 30
+let _n_ops_per_round = ref 30
 
-let _n_rounds = 50
+let _n_rounds = ref 10
 
 let loop_iter i (pre: M.t Vpst.t) : M.t Vpst.t = 
   pre >>= fun t ->
   let t1 = Sys.time() in
-  let c' =  U.fold (fun _ c -> do_an_oper c) _ops_per_sync (mk t) in
+  let c' =  U.fold (fun _ c -> do_an_oper c) !_n_ops_per_round (mk t) in
   let t2 = Sys.time () in
   Vpst.sync_next_version ~v:c'.M.t >>= fun v ->
   let t3 = Sys.time () in
+  let _ = flush_all() in
   begin 
     comp_time := !comp_time +. (t2 -. t1);
     sync_time := !sync_time +. (t3 -. t2);
@@ -88,34 +87,56 @@ let loop_iter i (pre: M.t Vpst.t) : M.t Vpst.t =
   end
 
 let work_loop : M.t Vpst.t = 
-  U.fold loop_iter _n_rounds (Vpst.get_latest_version ())
+  U.fold loop_iter !_n_rounds (Vpst.get_latest_version ()) >>= fun c ->
+  (*Vpst.print_info >>= fun () ->*)
+  Vpst.return c
 
-let main_f : unit Vpst.t = 
-  loop_until_y "Ready?" >>= fun () ->
-  Vpst.fork_version work_loop >>= fun () ->
-  work_loop >>= fun v ->
-  let mtime = !MInit.merge_time in
-  let mcount = !MInit.merge_count in
-  let avg_mtime = if mcount>0 then mtime/.(float mcount) 
-                  else 0.0 in
-  let real_mtime = !M.merge_time in
-  let _ = printf "Done\n" in 
-  let _ = printf "Total computational time: %fs\n" !comp_time in
-  let _ = printf "Total merge time: %fs\n" mtime in
-  let _ = printf "Total real merge time: %fs\n" real_mtime in
-  let _ = printf "Total number of merges: %d\n" mcount in
-  let _ = printf "Average merge time: %fs\n" avg_mtime in
-  let _ = printf "Sync time: %fs\n" !sync_time in
-  Vpst.return ()
+let reset () =
+  begin 
+    comp_time := 0.0;
+    MInit.merge_time := 0.0;
+    MInit.merge_count := 0;
+    M.merge_time :=0.0;
+  end
+
+
+let experiment_f (fp: out_channel) : unit =
+  begin
+    CInit.init ();
+    Vpst.with_init_version_do M.blank
+      begin 
+        Vpst.fork_version work_loop >>= fun br1 ->
+        Vpst.fork_version ~parent:br1 work_loop >>= fun br2 ->
+        Vpst.set_parent br2 >>= fun () ->
+        work_loop >>= fun _ ->
+        Vpst.liftLwt @@ Lwt_unix.sleep 5.0
+      end;
+    let mtime = !MInit.merge_time in
+    let ctime = !comp_time in
+    let stime = !sync_time in
+    let mcount = !MInit.merge_count in
+    let real_mtime = !M.merge_time in
+    let ctime_per_round = ctime/.(float (3 * !_n_rounds)) in
+    let avg_mtime = if mcount>0 then real_mtime/.(float mcount) 
+                    else 0.0 in
+    fprintf fp "%d,%d,%fs,%fs,%fs,%d,%fs,%fs,%fs\n" 
+                !_n_rounds !_n_ops_per_round 
+                mtime ctime stime mcount real_mtime 
+                ctime_per_round avg_mtime;
+    reset ()
+  end
 
 let main () =
-  let _ = CInit.init () in
-  let (f: M.t -> unit Vpst.t -> unit) = Vpst.with_init_version_do in
-  Logs.set_reporter @@ Logs.format_reporter ();
-  Logs.set_level @@ Some Logs.Error;
-   (*
-    * We start with a blank canvas.
-    *)
-  f M.blank main_f;;
+  begin
+    Logs.set_reporter @@ Logs.format_reporter ();
+    Logs.set_level @@ Some Logs.Error;
+    _n_rounds := int_of_string @@ Sys.argv.(1);
+    _n_ops_per_round := int_of_string @@ Sys.argv.(2);
+    if Array.length Sys.argv > 3 then
+      Random.init @@ int_of_string @@ Sys.argv.(3)
+    else Random.self_init ();
+    let fp = open_out_gen [Open_append] 0o777 "results.csv" in
+    experiment_f fp
+  end;;
 
 main ();;
