@@ -175,6 +175,17 @@ module Make  = struct
           (* pixels are merged by mixing colors *)
           let px' = color_mix px1 px2 in N px'
 
+  let merge_time = ref 0.0
+
+  let merge old v1 v2 = 
+    let t1 = Sys.time () in
+    let res = merge old v1 v2 in
+    let t2 = Sys.time () in
+    begin
+      merge_time := !merge_time +. (t2-.t1);
+      res;
+    end
+
   let rec print min_x min_y max_x max_y t = 
     if min_x > max_x || min_y > max_y then ()
     else match t with 

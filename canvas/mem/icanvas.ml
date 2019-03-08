@@ -64,67 +64,90 @@ struct
                  ((IrminConvert.mknode madt),
                    (IrminConvert.mkmadt node)))
     end
-  module AO_value =
-    (struct
-       type t = madt
-       let t = IrminConvertTie.madt
-       let pp = Irmin.Type.pp_json ~minify:false t
-       let of_string s =
-         let decoder = Jsonm.decoder (`String s) in
-         let res =
-           try Irmin.Type.decode_json t decoder
-           with
-           | Invalid_argument s ->
-               failwith @@
-                 (Printf.sprintf
-                    "AO_Value.of_string: Invalid_argument: %s" s) in
-         res
-     end : (Irmin.Contents.Conv with type  t =  madt))
-  module AO_store =
-    struct
-      module S = Irmin_git.AO(G)(AO_value)
-      include S
-      let create config =
-        let level =
-          Irmin.Private.Conf.key ~doc:"The Zlib compression level."
-            "level" (let open Irmin.Private.Conf in some int) None in
-        let root =
-          Irmin.Private.Conf.get config Irmin.Private.Conf.root in
-        let level = Irmin.Private.Conf.get config level in
-        G.create ?root ?level ()
-      let create () = create @@ (Irmin_git.config Config.root)
-      let on_add = ref (fun k v -> printf "%s\n" 
-                                     (Fmt.to_to_string K.pp k); 
-                                   Lwt.return ())
-      let add t v =
-        (S.add t v) >>=
-          (fun k -> ((!on_add) k v) >>= (fun _ -> Lwt.return k))
+  module AO_value : (Irmin.Contents.Conv with type  t =  madt) =
+  struct
+    type t = madt
+    let t = IrminConvertTie.madt
+    let pp = Irmin.Type.pp_json ~minify:false t
+    let of_string s =
+      let decoder = Jsonm.decoder (`String s) in
+      let res =
+        try Irmin.Type.decode_json t decoder
+        with
+        | Invalid_argument s ->
+            failwith @@
+              (Printf.sprintf
+                 "AO_Value.of_string: Invalid_argument: %s" s) in
+      res
+  end
 
-     let rec add_adt t (a:OM.t) : K.t Lwt.t =
-       add t =<<
-         (match a with
-          | OM.N {r;g;b} -> Lwt.return @@ N {r;g;b}
-          | OM.B {tl_t;tr_t;bl_t;br_t} -> 
-            (add_adt t tl_t >>= fun tl_t' ->
-             add_adt t tr_t >>= fun tr_t' ->
-             add_adt t bl_t >>= fun bl_t' ->
-             add_adt t br_t >>= fun br_t' ->
-             Lwt.return @@ B {tl_t=tl_t'; tr_t=tr_t'; 
-                              bl_t=bl_t'; br_t=br_t'}))
+  module AO_store = 
+  struct
+    module S = Irmin_git.AO(G)(AO_value)
+    include S
 
-     let rec read_adt t (k:K.t) : OM.t Lwt.t =
-       find t k >>= fun aop ->
-       let a = from_just aop "to_adt" in
-       match a with
-         | N {r;g;b} -> Lwt.return @@ OM.N {r;g;b}
-         | B {tl_t;tr_t;bl_t;br_t} ->
-           (read_adt t tl_t >>= fun tl_t' ->
-            read_adt t tr_t >>= fun tr_t' ->
-            read_adt t bl_t >>= fun bl_t' ->
-            read_adt t br_t >>= fun br_t' ->
-            Lwt.return @@ OM.B {OM.tl_t=tl_t'; OM.tr_t=tr_t'; 
-                                OM.bl_t=bl_t'; OM.br_t=br_t'})
-    end
+    let create config =
+      let level =
+        Irmin.Private.Conf.key ~doc:"The Zlib compression level."
+          "level" (let open Irmin.Private.Conf in some int) None in
+      let root =
+        Irmin.Private.Conf.get config Irmin.Private.Conf.root in
+      let level = Irmin.Private.Conf.get config level in
+      G.create ?root ?level ()
+
+    let create () = create @@ (Irmin_git.config Config.root)
+
+    let on_add = ref (fun k v -> (*printf "%s\n" 
+                                   (Fmt.to_to_string K.pp k); *)
+                                 Lwt.return ())
+    let add t v =
+      (S.add t v) >>=
+        (fun k -> ((!on_add) k v) >>= (fun _ -> Lwt.return k))
+
+    module PHashtbl = Hashtbl.Make(struct 
+        type t = OM.t
+        let equal x y = x == y
+        let hash x = Hashtbl.hash_param 2 10 x
+      end)
+
+    let (read_cache: (K.t, OM.t) Hashtbl.t) = Hashtbl.create 5051
+
+    let (write_cache: K.t PHashtbl.t) = PHashtbl.create 5051
+
+    let rec add_adt t (a:OM.t) : K.t Lwt.t =
+      try 
+        Lwt.return @@ PHashtbl.find write_cache a
+      with Not_found -> begin 
+        add t =<<
+          (match a with
+           | OM.N {r;g;b} -> Lwt.return @@ N {r;g;b}
+           | OM.B {tl_t;tr_t;bl_t;br_t} -> 
+             (add_adt t tl_t >>= fun tl_t' ->
+              add_adt t tr_t >>= fun tr_t' ->
+              add_adt t bl_t >>= fun bl_t' ->
+              add_adt t br_t >>= fun br_t' ->
+              Lwt.return @@ B {tl_t=tl_t'; tr_t=tr_t'; 
+                               bl_t=bl_t'; br_t=br_t'}))
+      end
+
+    let rec read_adt t (k:K.t) : OM.t Lwt.t =
+      try 
+        Lwt.return @@ Hashtbl.find read_cache k
+      with Not_found -> begin 
+        find t k >>= fun aop ->
+        let a = from_just aop "to_adt" in
+        match a with
+          | N {r;g;b} -> Lwt.return @@ OM.N {r;g;b}
+          | B {tl_t;tr_t;bl_t;br_t} ->
+            (read_adt t tl_t >>= fun tl_t' ->
+             read_adt t tr_t >>= fun tr_t' ->
+             read_adt t bl_t >>= fun bl_t' ->
+             read_adt t br_t >>= fun br_t' ->
+             Lwt.return @@ OM.B {OM.tl_t=tl_t'; OM.tr_t=tr_t'; 
+                                 OM.bl_t=bl_t'; OM.br_t=br_t'})
+      end
+  end
+
   module type IRMIN_STORE_VALUE  =
     sig
       include Irmin.Contents.S
@@ -133,6 +156,7 @@ struct
     end
 
   let merge_time = ref 0.0
+  let merge_count = ref 0
 
   module BC_value =
     (struct
@@ -173,8 +197,8 @@ struct
            begin 
              let t1 = Sys.time () in
              let open Irmin.Merge.Infix in
-             let _ = printf "Merge called\n" in
-             let _ = flush_all() in
+             (*let _ = printf "Merge called\n" in
+             let _ = flush_all() in*)
              old() >>=* fun old ->
              to_adt (from_just old "merge") >>= fun oldv ->
              to_adt v1 >>= fun v1 ->
@@ -183,6 +207,7 @@ struct
              of_adt v >>= fun merged_v -> 
              let t2 = Sys.time () in
              let _ = merge_time := !merge_time +. (t2-.t1) in
+             let _ = merge_count := !merge_count + 1 in
              Irmin.Merge.ok merged_v
            end
 
@@ -206,43 +231,12 @@ struct
       let string_of_path p = String.concat "/" p
       let info s = Irmin_unix.info "[repo %s] %s" Config.root s;;
 
-      AO_store.on_add := fun k v ->
-        begin
-          init () >>= fun repo -> 
-          master repo >>= fun m_br ->
-          let sha_str = Fmt.to_to_string Irmin.Hash.SHA1.pp k in
-          let fname_k = String.sub sha_str 0 7 in
-          let path_k = [fname_k] in
-          let msg = sprintf "Setting %s" fname_k in
-          Store.set m_br path_k v ~info:(info msg)
-        end
-
       let rec update ?msg  t (p : path) (v : BC_value.t) =
         let msg =
           match msg with
           | Some s -> s
           | None -> "Setting " ^ (string_of_path p) in
         Store.set t p v ~info:(info msg)
-        (*let fname_of_hash hsh =
-          String.sub (Fmt.to_to_string Irmin.Hash.SHA1.pp hsh) 0 7 in
-        let link_to_tree k =
-          (AO_store.create ()) >>=
-            (fun ao_store ->
-               (AO_store.find ao_store k) >>=
-                 (fun vop ->
-                    let v_k = from_just vop "BC_store.update" in
-                    let path_k = [fname_of_hash k] in
-                    update t path_k v_k)) in
-        (match v with
-         | B a0 ->
-             (match a0 with
-              | { tl_t; tr_t; bl_t; br_t;_} ->
-                  List.fold_left
-                    (fun m -> fun k -> m >>= (fun () -> link_to_tree k))
-                    (Lwt.return()) [tl_t; tr_t; bl_t; br_t])
-               >>= ((fun a0' -> Lwt.return()))
-         | N a0 -> Lwt.return()) >>=
-          (fun () -> Store.set t p v ~info:(info msg))*)
     end
   module Vpst :
     sig
@@ -253,7 +247,7 @@ struct
       val with_remote_version_do : string -> 'a t -> 'a
       val fork_version : 'a t -> unit t
       val get_latest_version : unit -> Canvas.t t
-      val sync_next_version : ?v:Canvas.t -> string list -> Canvas.t t
+      val sync_next_version : ?v:Canvas.t -> Canvas.t t
       val liftLwt : 'a Lwt.t -> 'a t
       val pull_remote : string -> unit t
     end =
@@ -271,6 +265,7 @@ struct
       let return (x : 'a) = (fun st -> Lwt.return (x, st) : 'a t)
       let bind (m1 : 'a t) (f : 'a -> 'b t) =
         (fun st -> (m1 st) >>= (fun (a, st') -> f a st') : 'b t)
+
       let with_init_version_do (v : Canvas.t) (m : 'a t) =
         Lwt_main.run
           ((BC_store.init ()) >>=
@@ -314,6 +309,7 @@ struct
            Lwt.async thread_f;
            Lwt.return ((), { st with next_id = (st.next_id + 1) }) : 
         unit t)
+
       let get_latest_version () =
         (fun (st : st) ->
            (BC_store.read st.master (*st.local*) path) >>=
@@ -321,7 +317,6 @@ struct
                 let v = from_just vop "get_latest_version" in
                 (BC_value.to_adt v) >>= (fun td -> Lwt.return (td, st))) : 
         Canvas.t t)
-
       let pull_remote remote_uri (st : st) =
         try
           let cinfo =
@@ -371,36 +366,28 @@ struct
                                     (m st) >>=
                                       (fun (a, _) -> Lwt.return a)))))))
 
-      let sync_next_version ?v (uris:string list) = fun (st:st) ->
+      let sync_next_version ?v = fun (st:st) ->
         try
-          (* 1. Commit to the master (* local*) branch *)
+          (* 1. Commit to the  local branch *)
           (match v with 
            | None -> Lwt.return ()
            | Some v -> 
              BC_value.of_adt v >>= fun v' -> 
              BC_store.update ~msg:"Committing local state" 
-                           st.master (*st.local*) path v') >>= fun () ->
-          (* 2. Pull remotes to master *)
-          let pull_vpst = List.fold_left 
-              (fun (pre: unit t) uri -> 
-                bind pre 
-                    (fun () -> 
-                      bind (pull_remote uri) (fun () ->
-                      return ()))) 
-              (return ()) uris in
-          pull_vpst st >>= fun ((),st') ->
-          (*
-          (* 3. Merge local master to the local branch *)
+                           st.local path v') >>= fun () ->
+          (* 2. Merge local master to the local branch *)
           let cinfo = info "Merging master into local" in
-          BC_store.merge st'.master ~into:st'.local ~info:cinfo >>= fun _ ->
-          (* 4. Merge local branch to the local master *)
+          Lwt_unix.sleep @@ 0.1 *. (float @@ Random.int 10) >>= fun _ ->
+          BC_store.merge st.master ~into:st.local ~info:cinfo >>= fun _ ->
+          (* 3. Merge local branch to the local master *)
           let cinfo = info "Merging local into master" in
-          BC_store.merge st'.local ~into:st'.master ~info:cinfo >>= fun _ ->
-          *)
-          get_latest_version () st'
+          Lwt_unix.sleep @@ 0.1 *. (float @@ Random.int 10) >>= fun _ ->
+          BC_store.merge st.local ~into:st.master ~info:cinfo >>= fun _ ->
+          get_latest_version () st
         with _ -> failwith "Some error occured"
         
       let liftLwt (m : 'a Lwt.t) =
         (fun st -> m >>= (fun a -> Lwt.return (a, st)) : 'a t)
     end 
 end
+
