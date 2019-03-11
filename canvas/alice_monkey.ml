@@ -40,18 +40,25 @@ module MkConfig (Vars: sig val root: string end) : Icanvas.Config = struct
     ()
 end
 
-module CInit = MkConfig(struct let root = "/tmp/repos/canvas.git" end)
+(*
+ * --------------------------------------------------------
+ * Note: this alice monkey is setup to do diff experiments.
+ * For more general experiments, change the repo root path, and
+ * uncomment bob_url
+ * --------------------------------------------------------
+ *)
+module CInit = MkConfig(struct let root = "/tmp/repos/canvas2.git" end)
 module MInit = Icanvas.MakeVersioned(CInit)
 module M = Canvas.Make
 module Vpst = MInit.Vpst
 
 let bob_uri = "git+ssh://opam@172.18.0.3/tmp/repos/canvas.git"
 
-let uris = [bob_uri]
+let uris = [(*bob_uri*)]
 
 let seed = 564294298
 
-let canvas_size = 64
+let canvas_size = 256
 
 let (>>=) = Vpst.bind
 
@@ -74,45 +81,73 @@ let comp_time = ref 0.0
 
 let sync_time = ref 0.0
 
+let avg_b_size = ref 0
+let avg_n_size = ref 0
+
+let _n_ops_per_round = ref 30
+
+let _n_rounds = ref 10
+
 let loop_iter i (pre: M.t Vpst.t) : M.t Vpst.t = 
   pre >>= fun t ->
   let t1 = Sys.time() in
-  let c' =  U.fold (fun _ c -> do_an_oper c) 10 (mk t) in
+  let c' =  U.fold (fun _ c -> do_an_oper c) !_n_ops_per_round (mk t) in
   let t2 = Sys.time () in
   Vpst.sync_next_version ~v:c'.M.t uris >>= fun v ->
   let t3 = Sys.time () in
+  let (b_size,n_size) = M.size c'.M.t in
   begin 
     comp_time := !comp_time +. (t2 -. t1);
     sync_time := !sync_time +. (t3 -. t2);
+    avg_b_size := ((!avg_b_size * i)+b_size)/( i+1);
+    avg_n_size := ((!avg_n_size * i)+n_size)/( i+1);
     Vpst.return v
   end
 
 
-let main_loop : M.t Vpst.t = 
-  U.fold loop_iter 10 (Vpst.get_latest_version ())
+let work_loop () : M.t Vpst.t = 
+  U.fold loop_iter !_n_rounds (Vpst.get_latest_version ())
 
-let alice_f : unit Vpst.t = 
-  loop_until_y "Ready?" >>= fun () ->
-  main_loop >>= fun v ->
-  let _ = printf "Done\n" in 
-  let _ = printf "Computational time: %fs\n" !comp_time in
-  let _ = printf "Merge time: %fs\n" !MInit.merge_time in
-  let _ = printf "Number of merges: %d\n" !MInit.merge_count in
-  let _ = printf "Average merge time: %fs\n" 
-            (if !MInit.merge_count > 0 
-             then (!MInit.merge_time)/.(float !MInit.merge_count)
-             else 0.0) in
-  let _ = printf "Sync time: %fs\n" !sync_time in
-  Vpst.return ()
+let experiment_f ((*fp: out_channel*)) : unit =
+  begin
+    CInit.init ();
+    Vpst.with_init_version_do "Alice" M.blank
+      begin 
+        (*Vpst.fork_version work_loop >>= fun br1 ->
+        Vpst.fork_version ~parent:br1 work_loop >>= fun br2 ->
+        Vpst.set_parent br2 >>= fun () ->*)
+        work_loop () >>= fun _ ->
+        Vpst.liftLwt @@ Lwt_unix.sleep 5.0
+      end;
+    printf "Done\n";
+    let kb = ((!avg_b_size * 239)+(!avg_n_size * 56))/1024 in
+    printf "%d\n" kb;
+    (*let mtime = !MInit.merge_time in
+    let ctime = !comp_time in
+    let stime = !sync_time in
+    let mcount = !MInit.merge_count in
+    let real_mtime = !M.merge_time in
+    let total_rounds = 3 * !_n_rounds in
+    let ctime_per_round = ctime/.(float total_rounds) in
+    let avg_mtime = real_mtime/.(float total_rounds) in
+    fprintf fp "%d,%d,%fs,%fs,%fs,%d,%fs,%fs,%fs\n" 
+                !_n_rounds !_n_ops_per_round 
+                mtime ctime stime mcount real_mtime 
+                ctime_per_round avg_mtime;
+    reset ()*)
+  end
 
 let main () =
-  let _ = CInit.init () in
-  let (f: M.t -> unit Vpst.t -> unit) = Vpst.with_init_version_do in
-  Logs.set_reporter @@ Logs.format_reporter ();
-  Logs.set_level @@ Some Logs.Error;
-   (*
-    * Alice starts with a blank canvas.
-    *)
-  f M.blank alice_f;;
+  begin
+    Logs.set_reporter @@ Logs.format_reporter ();
+    Logs.set_level @@ Some Logs.Error;
+    _n_rounds := int_of_string @@ Sys.argv.(1);
+    _n_ops_per_round := int_of_string @@ Sys.argv.(2);
+    if Array.length Sys.argv > 3 then
+      Random.init @@ int_of_string @@ Sys.argv.(3)
+    else Random.self_init ();
+    (*let fp = open_out_gen [Open_append] 0o777 "results.csv" in*)
+    experiment_f ()
+  end;;
 
 main ();;

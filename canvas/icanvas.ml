@@ -204,6 +204,7 @@ struct
 
   let merge_time = ref 0.0
   let merge_count = ref 0
+  let _name = ref "Anon"
 
   module rec BC_value : (IRMIN_STORE_VALUE with type  t =  madt) =
   struct
@@ -264,7 +265,7 @@ struct
           BC_store.init () >>= fun repo ->
           BC_store.master repo >>= fun t ->
           BC_store.with_tree t ["state"]
-            ~info:(BC_store.info "merging")
+            ~info:(BC_store.info "Mergefn")
             begin fun trop ->
               let tr = from_just trop "merge.trop" in
               let tmod = (module BC_store.Tree : 
@@ -299,7 +300,7 @@ struct
 
           let tag_of_hash k = 
             let sha_str = Fmt.to_to_string Irmin.Hash.SHA1.pp k in
-            let fname_k = String.sub sha_str 0 7 in
+            let fname_k = String.sub sha_str 0 10 in
               [fname_k]
 
           let add t k v = Store.Tree.add t k v
@@ -326,7 +327,7 @@ struct
 
       let string_of_path p = String.concat "/" p
 
-      let info s = Irmin_unix.info "[repo %s] %s" Config.root s;;
+      let info s = Irmin_unix.info "[%s] %s" !_name s;;
 
       let with_tree t path ~info f = Store.with_tree t path f
                                       ~info:info
@@ -356,8 +357,8 @@ struct
       type 'a t
       val return : 'a -> 'a t
       val bind : 'a t -> ('a -> 'b t) -> 'b t
-      val with_init_version_do : Canvas.t -> 'a t -> 'a
-      val with_remote_version_do : string -> 'a t -> 'a
+      val with_init_version_do : string -> Canvas.t -> 'a t -> 'a
+      val with_remote_version_do : string -> string -> 'a t -> 'a
       (*val fork_version : 'a t -> unit t*)
       val get_latest_version : unit -> Canvas.t t
       val sync_next_version : ?v:Canvas.t -> string list -> Canvas.t t
@@ -370,11 +371,12 @@ struct
         {
         master: store ;
         name: string ;
-        next_id: int }
+        next_id: int ;
+        seq_no: int}
 
       type 'a t = st -> ('a * st) Lwt.t
 
-      let info s = Irmin_unix.info "[repo %s] %s" Config.root s
+      let info name s = Irmin_unix.info "[%s] %s" name s
 
       (*let path = ["state"]*)
 
@@ -383,7 +385,8 @@ struct
       let bind (m1 : 'a t) (f : 'a -> 'b t) =
         (fun st -> (m1 st) >>= (fun (a, st') -> f a st') : 'b t)
 
-      let with_init_version_do (v : Canvas.t) (m : 'a t) =
+      let with_init_version_do name (v : Canvas.t) (m : 'a t) =
+        let _ = _name := name in 
         Lwt_main.run
         begin 
           BC_store.init () >>= fun repo ->
@@ -402,7 +405,8 @@ struct
               Tree.add tr' head_tag v' >>= fun tr'' ->
               Lwt.return @@ Some tr''
             end >>= fun () ->
-          let st = { master = m_br; name = "1"; next_id = 1 } in
+          let st = { master = m_br; name = name; 
+                     next_id = 1; seq_no = 1 } in
           m st >>= (fun (a, _) -> Lwt.return a)
         end
 
@@ -417,9 +421,9 @@ struct
       let pull_remote remote_uri (st : st) =
         try
           let cinfo =
-            info
-              (Printf.sprintf "Merging remote(%s) to master"
-                 remote_uri) in
+            info st.name 
+              (Printf.sprintf "%d. pulling remote(%s)"
+                 st.seq_no remote_uri) in
           let remote = Irmin.remote_uri remote_uri in
           let _ = printf "Pulling from %s\n" remote_uri in
           let _ = flush_all () in
@@ -435,7 +439,8 @@ struct
             Lwt.return ((), st)
           end
 
-      let with_remote_version_do remote_uri m =
+      let with_remote_version_do name remote_uri m =
+        let _ = _name := name in 
         Lwt_main.run
           ((BC_store.init ()) >>=
              (fun repo ->
@@ -454,8 +459,9 @@ struct
                                  (let st =
                                       {
                                         master = m_br;
-                                        name = "1";
-                                        next_id = 1
+                                        name = name;
+                                        next_id = 1;
+                                        seq_no = 1;
                                       } in
                                     (m st) >>=
                                       (fun (a, _) -> Lwt.return a)))))))
@@ -467,7 +473,8 @@ struct
            | None -> Lwt.return ()
            | Some v -> 
              BC_store.with_tree st.master ["state"]
-               ~info:(BC_store.info "setting latest version")
+               ~info:(info st.name @@
+                      sprintf "%d. setting latest version" st.seq_no)
                begin fun trop ->
                  let module Tree = BC_store.Tree in
                  let tr = match trop with
@@ -497,7 +504,7 @@ struct
           let cinfo = info "Merging local into master" in
           BC_store.merge st'.local ~into:st'.master ~info:cinfo >>= fun _ ->
           *)
-          get_latest_version () st'
+          get_latest_version () {st' with seq_no = st'.seq_no + 1}
         with _ -> failwith "Some error occured"
         
       let liftLwt (m : 'a Lwt.t) =

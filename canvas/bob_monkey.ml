@@ -107,7 +107,7 @@ let bob_f : unit Vpst.t =
 let main () =
   let _ = CInit.init () in
   let (f: unit Vpst.t -> unit) = 
-            Vpst.with_remote_version_do alice_uri in
+            Vpst.with_remote_version_do "Bob" alice_uri in
   Logs.set_reporter @@ Logs.format_reporter ();
   Logs.set_level @@ Some Logs.Error;
    (*

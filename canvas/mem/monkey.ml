@@ -83,13 +83,17 @@ let loop_iter i (pre: M.t Vpst.t) : M.t Vpst.t =
   begin 
     comp_time := !comp_time +. (t2 -. t1);
     sync_time := !sync_time +. (t3 -. t2);
+    printf "Round %d\n" i;
+    flush_all();
     Vpst.return v
   end
 
-let work_loop : M.t Vpst.t = 
-  U.fold loop_iter !_n_rounds (Vpst.get_latest_version ()) >>= fun c ->
-  (*Vpst.print_info >>= fun () ->*)
-  Vpst.return c
+let n_done = ref 0
+
+let work_loop () : M.t Vpst.t = 
+  U.fold loop_iter !_n_rounds (Vpst.get_latest_version ()) >>= fun v ->
+  n_done := !n_done + 1;
+  Vpst.return v
 
 let reset () =
   begin 
@@ -99,30 +103,40 @@ let reset () =
     M.merge_time :=0.0;
   end
 
+let rec wait_till_done () : unit Vpst.t = 
+  if !n_done = 3 then Vpst.return ()
+  else begin 
+    Vpst.liftLwt @@ Lwt_unix.sleep 1.0 >>= fun _ ->
+    wait_till_done ()
+  end
 
 let experiment_f (fp: out_channel) : unit =
   begin
     CInit.init ();
     Vpst.with_init_version_do M.blank
       begin 
-        Vpst.fork_version work_loop >>= fun br1 ->
-        Vpst.fork_version ~parent:br1 work_loop >>= fun br2 ->
+        Vpst.fork_version (work_loop ()) >>= fun br1 ->
+        Vpst.fork_version ~parent:br1 (work_loop ()) >>= fun br2 ->
         Vpst.set_parent br2 >>= fun () ->
-        work_loop >>= fun _ ->
-        Vpst.liftLwt @@ Lwt_unix.sleep 5.0
+        (work_loop ()) >>= fun _ ->
+        wait_till_done ()
       end;
     let mtime = !MInit.merge_time in
     let ctime = !comp_time in
     let stime = !sync_time in
     let mcount = !MInit.merge_count in
     let real_mtime = !M.merge_time in
-    let ctime_per_round = ctime/.(float (3 * !_n_rounds)) in
-    let avg_mtime = if mcount>0 then real_mtime/.(float mcount) 
-                    else 0.0 in
-    fprintf fp "%d,%d,%fs,%fs,%fs,%d,%fs,%fs,%fs\n" 
+    let total_rounds = 3 * !_n_rounds in
+    let ctime_per_round = ctime/.(float total_rounds) in
+    let mdivisor1 = if mcount > total_rounds then mcount 
+                    else total_rounds in
+    let mdivisor2 = max mcount 1 in
+    let avg_mtime1 = real_mtime/.(float mdivisor1) in
+    let avg_mtime2 = real_mtime/.(float mdivisor2) in
+    fprintf fp "%d,%d,%fs,%fs,%fs,%d,%fs,%fs,%fs,%fs\n" 
                 !_n_rounds !_n_ops_per_round 
                 mtime ctime stime mcount real_mtime 
-                ctime_per_round avg_mtime;
+                ctime_per_round avg_mtime1 avg_mtime2;
     reset ()
   end
 

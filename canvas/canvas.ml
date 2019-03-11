@@ -195,6 +195,15 @@ module Make  = struct
             print (mid_x+1) (mid_y+1) max_x max_y br_t;
           end 
 
+  let rec size = function
+    | N _ -> (0,1)
+    | B {tl_t; tr_t; bl_t; br_t} -> 
+      let (x1,y1) = size tl_t in
+      let (x2,y2) = size tr_t in
+      let (x3,y3) = size bl_t in
+      let (x4,y4) = size br_t in
+      (x1+x2+x3+x4+1, y1+y2+y3+y4)
+
   let print {max_x; max_y; t} = print 0 0 max_x max_y t
 
   let print c = 

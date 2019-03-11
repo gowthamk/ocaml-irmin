@@ -231,6 +231,7 @@ struct
 
        let rec merge ~old:(old : t Irmin.Merge.promise)  (v1 : t)
          (v2 : t) = 
+         let _ = Gc.full_major () in
          let t1 = Sys.time () in 
          let res = 
            if v1 = v2 then Irmin.Merge.ok v1
@@ -253,6 +254,7 @@ struct
     struct
       module Store = (Irmin_unix.Git.Mem.KV)(BC_value)
       module Sync = (Irmin.Sync)(Store)
+      module Head = Store.Head
       type t = Store.t
       type path = string list
       let init ?root  ?bare  () =
@@ -330,18 +332,18 @@ struct
                                     (m st) >>=
                                       (fun (a, _) -> Lwt.return a)))))))
       let fork_version ?parent (m : 'a t) = fun (st : st) ->
-           let child_name =
-             st.name ^ ("_" ^ (string_of_int st.next_id)) in
-           let m_br = st.master in
-           BC_store.clone m_br (child_name ^ "_local") >>= fun t_br ->
-           let p_br = match parent with
-             | Some br -> br
-             | None -> st.local in
-           let new_st = { master = m_br; parent = p_br; 
-                          local = t_br; name = child_name; 
-                          next_id = 1} in
-           Lwt.async (fun () -> m new_st);
-           Lwt.return (t_br, { st with next_id = (st.next_id + 1) })
+        let child_name =
+          st.name ^ ("_" ^ (string_of_int st.next_id)) in
+        let m_br = st.master in
+        BC_store.clone m_br (child_name ^ "_local") >>= fun t_br ->
+        let p_br = match parent with
+          | Some br -> br
+          | None -> st.local in
+        let new_st = { master = m_br; parent = p_br; 
+                       local = t_br; name = child_name; 
+                       next_id = 1} in
+        Lwt.async (fun () -> m new_st);
+        Lwt.return (t_br, { st with next_id = (st.next_id + 1) })
 
       let get_latest_version () =
         (fun (st : st) ->
@@ -367,7 +369,12 @@ struct
           (* 2. Merge parent to the local branch *)
           let cinfo = info "Merging parent into local" in
           Lwt_unix.sleep @@ 0.1 *. (float @@ Random.int 20) >>= fun _ ->
-          BC_store.merge st.parent ~into:st.local ~info:cinfo >>= fun _ ->
+          BC_store.Head.find st.parent >>= fun commitop ->
+          let latest_commit = match commitop with
+            | Some p -> p
+            | None -> failwith "Parent has no commits!" in
+          BC_store.Head.merge latest_commit
+              ~into:st.local ~info:cinfo >>= fun _ ->
           get_latest_version () st
         with _ -> failwith "Some error occured"
         
