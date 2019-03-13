@@ -3,17 +3,11 @@ open Irmin_unix
 open Printf
 open Msigs
 
-module type Config = sig
-  val root: string
-  val shared: string
-  val init: unit -> unit
-end
-
 let from_just op msg = match op with
   | Some x -> x
   | None -> failwith @@ msg^": Expected Some. Got None."
 
-module MakeVersioned (Config: Config) 
+module MakeVersioned (Config: CONFIG) 
                      (Key: Rbmap.KEY)
                      (Value: Rbmap.VALUE)
                      (V: IRMIN_DATA_STRUCTURE

@@ -39,8 +39,7 @@ module type KEY =
 module type VALUE = 
   sig
     type t
-    val t: t Irmin.Type.t
-    val merge: t -> t -> t -> t
+    val merge: ancestor:t -> t -> t -> t
   end
 
 module type S =

@@ -1,5 +1,16 @@
 module K = Irmin.Hash.SHA1
 
+module type CONFIG = sig
+  val root: string
+  val shared: string
+  val init: unit -> unit
+end
+
+module type MERGEABLE = sig 
+  type t
+  val merge: ancestor:t -> t -> t -> t
+end
+
 module type TAG_TREE = sig
   type t
   type tag
@@ -59,9 +70,13 @@ end
 
 
 module type IRMIN_DATA_STRUCTURE = sig
-  type t
   type adt
-  val t: t Irmin.Type.t
-  module BC_value: IRMIN_STORE_VALUE with type t=t 
-                                      and type adt = adt
+  (*module BC_value: IRMIN_STORE_VALUE with type t=t 
+                                      and type adt = adt*)
+  include Irmin.Contents.S
+  val of_adt : (module TAG_TREE 
+                 with type t='a 
+                  and type value=t) 
+              -> adt -> 'a -> (t*'a) Lwt.t
+  val to_adt: t -> adt Lwt.t
 end
