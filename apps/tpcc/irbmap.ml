@@ -16,7 +16,7 @@ let from_just op msg = match op with
 module MakeVersioned (Config: Config) 
                      (Key: Rbmap.KEY)
                      (Value: Rbmap.VALUE)
-                     (V: VERSIONED_DATA_STRUCTURE_STORE 
+                     (V: IRMIN_DATA_STRUCTURE
                          with type adt = Value.t)  = 
 struct
   module OM = Rbmap.Make(Key)(Value)
@@ -25,20 +25,24 @@ struct
   type adt = OM.t
 
   type targ = (K.t * (Key.t *(V.t * K.t)))
-  and t =
-  | Black of targ
-  | Red of targ
-  | Empty
+  type my_t =
+    | Black of targ
+    | Red of targ
+    | Empty
+  type t = 
+    | Me of my_t
+    | Child of V.t
 
-  type madt = t
+  type madt = my_t
+  type boxed_t = t
 
-  let mktarg t = 
+  let targ  = 
     let open Irmin.Type in 
     (pair K.t (pair Key.t (pair V.t K.t)))
 
-  let mkt targ =
+  let my_t =
     let open Irmin.Type in
-    variant "t" (fun b r e -> function
+    variant "my_t" (fun b r e -> function
         | Black a  -> b a
         | Red a -> r a
         | Empty -> e)
@@ -47,13 +51,17 @@ struct
     |~ case0 "Empty" Empty
     |> sealv
 
-  let t,earg = 
-    let open Irmin.Type in 
-    mu2 (fun t targ -> mkt targ, mktarg t)
-
+  let t = 
+    let open Irmin.Type in
+    variant "t" (fun m c -> function
+        | Me a  -> m a
+        | Child a -> c a)
+    |~ case1 "Me" my_t (fun x -> Me x)
+    |~ case1 "Child" V.t (fun x -> Child x)
+    |> sealv
 
   module AO_value : Irmin.Contents.Conv with type t = t = struct
-    type t = madt
+    type t = boxed_t
 
     let t = t
 
@@ -75,16 +83,33 @@ struct
 
   module type MY_TREE = TAG_TREE with type value=t
 
-  module type V_TREE = TAG_TREE 
-    with type t=V.BC_store.tree 
-     and type value=V.t
+  module type V_TREE = TAG_TREE with type value=V.t
 
-  module Vtree = V.BC_store.Tree
+  let my_tree_to_v_tree : type a b. (module MY_TREE with type t=a 
+                                                     and type tag=b)
+                                -> (module V_TREE with type t=a 
+                                                   and type tag=b) =
+    fun (module T) ->
+      let module Vtree = struct
+          type t = T.t
+          type tag = T.tag
+          type value = V.t
+          let tag_of_string = T.tag_of_string
+          let tag_of_hash = T.tag_of_hash
+          let empty = T.empty
+          let add t tag vt = 
+            T.add t tag (Child vt)
+        end in
+      (module Vtree: V_TREE with type t=T.t 
+                             and type tag=T.tag)
 
-  module AO_store = struct
+  module AO_store : AO_STORE with type adt=adt 
+                              and type value=t = struct
     (* Immutable collection of all versionedt *)
     module S = Irmin_git.AO(Git_unix.FS)(AO_value)
     include S
+
+    type adt=OM.t
 
     let create config =
       let level = Irmin.Private.Conf.key ~doc:"The Zlib compression level."
@@ -110,23 +135,26 @@ struct
    * for faster lookups. read_adt memoization is straightforward.
    *)
   let rec add_adt : type a. (module MY_TREE with type t=a) ->
-           t -> adt -> (a*Vtree.t -> (K.t*a*Vtree.t) Lwt.t) =
+           t -> adt -> (a -> (K.t*a) Lwt.t) =
     fun  (module T) t (adt:adt) ->
-      let add_to_store (v:AO_value.t) = fun (tra,trb) ->
-        add_and_link (module T:MY_TREE with type t = a) 
-                     t v tra >>= fun (ka,tra') -> 
-        Lwt.return (ka,tra',trb) in
-      let of_vadt vadt = fun (tra,trb) ->
-        V.BC_value.of_adt (module Vtree: V_TREE) 
-                            vadt trb >>= fun (v,trb') ->
-        Lwt.return (v,tra,trb') in
+      let vtree = my_tree_to_v_tree (module T) in
+      let module Vtree = (val vtree : V_TREE with type t=T.t 
+                                              and type tag=T.tag) in
+      let add_to_store (v:my_t) = 
+        fun tr ->
+          add_and_link (module T:MY_TREE with type t = a) 
+                       t (Me v) tr >>= fun (k,tr') -> 
+          Lwt.return (k,tr') in
+      let of_vadt vadt = fun tr ->
+        V.BC_value.of_adt (module Vtree: V_TREE with type t=T.t) 
+                            vadt tr in
       let add_adt = add_adt (module T:MY_TREE with type t = a) t in
       (*
        * We momentarily override Lwt's bind and return so as to pass
-       * the trees around without making a mess.
+       * the tree around without making a mess.
        *)
-      let (>>=) m f = fun (tra,trb) -> 
-        m (tra,trb) >>= fun (k,tra',trb') -> f k (tra',trb') in
+      let (>>=) m f = fun tr -> 
+        m tr >>= fun (k,tr') -> f k tr' in
       begin 
         match adt with
          | OM.Black (lt,n,vadt,rt) -> 
@@ -147,73 +175,50 @@ struct
     let to_vadt v = V.BC_value.to_adt v in
     let a = from_just aop "to_adt" in
     (match a with
-      | Black (lt, (n, (v, rt))) ->
+      | Me (Black (lt, (n, (v, rt)))) ->
         (read_adt t lt >>= fun lt' ->
          read_adt t rt >>= fun rt' ->
          to_vadt v >>= fun vadt ->
          Lwt.return @@ OM.Black (lt', n, vadt, rt'))
-      | Red (lt, (n, (v, rt))) ->
+      | Me (Red (lt, (n, (v, rt)))) ->
         (read_adt t lt >>= fun lt' ->
          read_adt t rt >>= fun rt' ->
          to_vadt v >>= fun vadt ->
          Lwt.return @@ OM.Red (lt', n, vadt, rt'))
-      | Empty -> Lwt.return @@ OM.Empty)
+      | Me Empty -> Lwt.return @@ OM.Empty
+      | Child _ -> failwith "read_adt.Exhaustiveness")
 
     let find_or_fail t (k:K.t) : AO_value.t Lwt.t =
       find t k >>= fun vop ->
       Lwt.return @@ from_just vop "find_or_fail"
   end
 
-  module type IRMIN_STORE_VALUE = sig
-    include Irmin.Contents.S
-    val of_adt : (module MY_TREE with type t = 'a) -> 
-      adt -> ('a*Vtree.t) -> (t*'a*Vtree.t) Lwt.t
-    val to_adt: t -> adt Lwt.t
-  end
- 
-  module type IRMIN_STORE = 
-  sig
-    type t
-    type repo
-    type path = string list
-    type tree
-    module Sync:Irmin.SYNC with type db = t
-    module Tree: MY_TREE with type t = tree 
-    val init : ?root:'a -> ?bare:'b -> unit -> repo Lwt.t
-    val master : repo -> t Lwt.t
-    val clone : t -> string -> t Lwt.t
-    val get_branch : repo -> branch_name:string -> t Lwt.t
-    val merge : t ->
-      into:t ->
-      info:Irmin.Info.f -> (unit, Irmin.Merge.conflict) result Lwt.t
-    val read : t -> path -> madt option Lwt.t
-    val info : string -> Irmin.Info.f
-    val update : ?msg:string -> t -> path -> madt -> unit Lwt.t
-    val with_tree : t -> path -> info:Irmin.Info.f ->
-                    (tree option -> tree option Lwt.t) -> unit Lwt.t
-  end
-
-  module rec BC_value: IRMIN_STORE_VALUE with type t = t = struct
+  module rec BC_value: IRMIN_STORE_VALUE with type t = t 
+                                          and type adt=adt = struct
     include AO_value
+
+    type adt=OM.t
     
     let of_adt : type a. (module MY_TREE with type t = a) -> adt
-                         -> (a*Vtree.t) -> (t*a*Vtree.t) Lwt.t = 
+                         -> (a) -> (t*a) Lwt.t = 
       fun (module T) adt ->
+        let vtree = my_tree_to_v_tree (module T) in
+        let module Vtree = (val vtree : V_TREE with type t=T.t 
+                                          and type tag=T.tag) in
+        let of_vadt vadt = fun tr ->
+          V.BC_value.of_adt (module Vtree) 
+                              vadt tr >>= fun (v,tr') ->
+          Lwt.return (v,tr') in
         (*
          * Momentarily overriding Lwt's bind and return with our own
          * bind and return to pass around the tree.
          *)
-        let of_vadt vadt = fun (tra,trb) ->
-          V.BC_value.of_adt (module Vtree: V_TREE) 
-                              vadt trb >>= fun (v,trb') ->
-          Lwt.return (v,tra,trb') in
-        let return x = 
-          fun (tra,trb) -> Lwt.return (x,tra,trb) in
+        let return x = fun tr -> Lwt.return (x,tr) in
         let lift m = 
-          fun (tra,trb) -> m >>= fun x -> 
-                            Lwt.return (x,tra,trb) in
-        let (>>=) m f = fun (tra,trb) -> 
-          m (tra,trb) >>= fun (k,tra',trb') -> f k (tra',trb') in
+          fun tr -> m >>= fun x -> 
+                    Lwt.return (x,tr) in
+        let (>>=) m f = fun (tr) -> 
+            m tr >>= fun (k,tr') -> f k tr' in
         lift (AO_store.create ()) >>= fun ao_store -> 
         let aostore_add =
           AO_store.add_adt (module T) ao_store in
@@ -222,13 +227,13 @@ struct
            (aostore_add lt >>= fun lt' ->
             aostore_add rt >>= fun rt' ->
             of_vadt vadt >>= fun v ->
-            return @@ Black (lt',(n,(v,rt'))))
+            return @@ Me (Black (lt',(n,(v,rt')))))
          | OM.Red (lt,n,vadt,rt) -> 
            (aostore_add lt >>= fun lt' ->
             aostore_add rt >>= fun rt' ->
             of_vadt vadt >>= fun v ->
-            return @@ Red (lt',(n,(v,rt'))))
-         | OM.Empty -> return @@ Empty
+            return @@ Me (Red (lt',(n,(v,rt')))))
+         | OM.Empty -> return @@ Me Empty
 
     let to_adt (t:t) : adt Lwt.t =
       let to_vadt v = V.BC_value.to_adt v in
@@ -236,17 +241,18 @@ struct
       let aostore_read k =
         AO_store.read_adt ao_store k in
       match t with
-        | Black (lt,(n,(v,rt))) ->
+        | Me (Black (lt,(n,(v,rt)))) ->
           (aostore_read lt >>= fun lt' ->
            aostore_read rt >>= fun rt' ->
            to_vadt v >>= fun vadt ->
            Lwt.return @@ OM.Black (lt',n,vadt,rt'))
-        | Red (lt,(n,(v,rt))) ->
+        | Me (Red (lt,(n,(v,rt)))) ->
           (aostore_read lt >>= fun lt' ->
            aostore_read rt >>= fun rt' ->
            to_vadt v >>= fun vadt ->
            Lwt.return @@ OM.Red (lt',n,vadt,rt'))
-        | Empty -> Lwt.return @@ OM.Empty
+        | Me Empty -> Lwt.return @@ OM.Empty
+        | Child _ -> failwith "to_adt.exhaustiveness"
 
 
     (*
@@ -367,7 +373,7 @@ struct
     let merge = Irmin.Merge.(option (v t merge))
   end
 
-  and BC_store : IRMIN_STORE = struct
+  and BC_store : IRMIN_STORE with type value = t = struct
     module Store = Irmin_unix.Git.FS.KV(BC_value)
     module Sync = Irmin.Sync(Store)
     module Status = Store.Status
@@ -376,6 +382,7 @@ struct
     type repo = Store.repo
     type tree = Store.tree
     type path = string list
+    type value = boxed_t
 
     module Tree = 
       struct
@@ -383,7 +390,7 @@ struct
 
         type tag = string list
 
-        type value = madt
+        type value = boxed_t
 
         let empty () = Store.Tree.empty
 
@@ -411,7 +418,12 @@ struct
 
     (*let update t k v = Store.set t k v*)
 
-    let read t (p:path) = Store.find t p
+    let read t (p:path) = 
+      Store.find t p (*>>= fun vop ->
+      Lwt.return (match vop with
+      | None -> None
+      | Some (Me m) -> Some m
+      | Some (Child _) -> failwith "BC_store.read.exhaustiveness")*)
 
     let string_of_path p = String.concat "/" p
 
@@ -423,7 +435,7 @@ struct
 
     let status t = Store.status t
 
-    let rec update ?msg t (p:path) (v:BC_value.t) = 
+    let rec update ?msg t (p:path) (v:boxed_t) = 
       let msg = match msg with
         | Some s -> s
         | None -> "Setting "^(string_of_path p) in
@@ -460,13 +472,11 @@ struct
     let bind (m1: 'a t) (f: 'a -> 'b t) : 'b t = 
       fun st -> (m1 st >>= fun (a,st') -> f a st')
     
-    let with_init_version_do (v : OM.t) (m : 'a t) =
+    let with_init_version_do (v : adt) (m : 'a t) =
       Lwt_main.run
       begin 
         BC_store.init () >>= fun repo ->
-        V.BC_store.init () >>= fun v_repo ->
         BC_store.master repo >>= fun m_br ->
-        V.BC_store.master v_repo >>= fun v_m_br ->
         BC_store.with_tree m_br ["state"]
           ~info:(BC_store.info "Initial version")
           begin fun trop ->
@@ -474,7 +484,7 @@ struct
             let tr = match trop with 
               | Some tr -> tr
               | None -> Tree.empty () in
-            let tmod = (module Tree : TAG_TREE 
+            let tmod = (module Tree : MY_TREE 
                          with type t = BC_store.tree) in
             BC_value.of_adt tmod v tr >>= fun (v',tr') ->
             let head_tag = Tree.tag_of_string "head" in
@@ -489,9 +499,10 @@ struct
     let get_latest_version () =
       (fun (st : st) ->
          (BC_store.read st.master (*st.local*) ["state"; "head"]) >>=
-           (fun (vop : BC_value.t option) ->
+           (fun (vop : boxed_t option) ->
               let v = from_just vop "get_latest_version" in
-              (BC_value.to_adt v) >>= (fun td -> Lwt.return (td, st))) : 
+              (BC_value.to_adt v) >>= fun td -> 
+              Lwt.return (td, st)) : 
       OM.t t)
 
     let pull_remote remote_uri = fun (st: st) ->
@@ -538,7 +549,7 @@ struct
                let tr = match trop with
                  | Some tr -> tr
                  | None -> Tree.empty () in
-                let tmod = (module Tree : TAG_TREE 
+                let tmod = (module Tree : MY_TREE 
                              with type t = BC_store.tree) in
                 BC_value.of_adt tmod v tr >>= fun (v',tr') ->
                 let head_tag = Tree.tag_of_string "head" in
@@ -568,4 +579,5 @@ struct
     let liftLwt (m: 'a Lwt.t) : 'a t = fun st ->
       m >>= fun a -> Lwt.return (a,st)
 	end
+
 end
