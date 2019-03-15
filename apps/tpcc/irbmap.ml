@@ -10,10 +10,13 @@ let from_just op msg = match op with
 module MakeVersioned (Config: CONFIG) 
                      (Key: Rbmap.KEY)
                      (Value: Rbmap.VALUE)
+                     (OM: Rbmap.S with type key=Key.t 
+                                   and type value=Value.t)
                      (V: IRMIN_DATA_STRUCTURE
-                         with type adt = Value.t)  = 
+                         with type adt = Value.t) :
+              IRMIN_DATA_STRUCTURE with type adt = OM.t  = 
 struct
-  module OM = Rbmap.Make(Key)(Value)
+  (*module OM = Rbmap.Make(Key)(Value)*)
   module K = Irmin.Hash.SHA1
 
   type adt = OM.t
@@ -140,8 +143,7 @@ struct
                        t (Me v) tr >>= fun (k,tr') -> 
           Lwt.return (k,tr') in
       let of_vadt vadt = fun tr ->
-        V.BC_value.of_adt (module Vtree: V_TREE with type t=T.t) 
-                            vadt tr in
+        V.of_adt (module Vtree: V_TREE with type t=T.t) vadt tr in
       let add_adt = add_adt (module T:MY_TREE with type t = a) t in
       (*
        * We momentarily override Lwt's bind and return so as to pass
@@ -166,7 +168,7 @@ struct
 
   let rec read_adt t (k:K.t) : adt Lwt.t =
     find t k >>= fun aop ->
-    let to_vadt v = V.BC_value.to_adt v in
+    let to_vadt v = V.to_adt v in
     let a = from_just aop "to_adt" in
     (match a with
       | Me (Black (lt, (n, (v, rt)))) ->
@@ -200,8 +202,7 @@ struct
         let module Vtree = (val vtree : V_TREE with type t=T.t 
                                           and type tag=T.tag) in
         let of_vadt vadt = fun tr ->
-          V.BC_value.of_adt (module Vtree) 
-                              vadt tr >>= fun (v,tr') ->
+          V.of_adt (module Vtree) vadt tr >>= fun (v,tr') ->
           Lwt.return (v,tr') in
         (*
          * Momentarily overriding Lwt's bind and return with our own
@@ -230,7 +231,7 @@ struct
          | OM.Empty -> return @@ Me Empty
 
     let to_adt (t:t) : adt Lwt.t =
-      let to_vadt v = V.BC_value.to_adt v in
+      let to_vadt v = V.to_adt v in
       AO_store.create () >>= fun ao_store ->
       let aostore_read k =
         AO_store.read_adt ao_store k in
@@ -435,6 +436,20 @@ struct
         | None -> "Setting "^(string_of_path p) in
       Store.set t p v ~info:(info msg)
   end
+
+  (*
+   * The following to make rbmap an irmin data structure
+   *)
+  let of_adt = BC_value.of_adt
+
+  let to_adt = BC_value.to_adt
+
+  let merge = BC_value.merge
+
+  let of_string = AO_value.of_string
+
+  let pp = AO_value.pp
+
 
   module type VPST = sig
     type 'a t

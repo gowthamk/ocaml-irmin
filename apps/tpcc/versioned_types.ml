@@ -96,7 +96,7 @@ end
 module Make(Config:CONFIG) = 
 struct
   
-  module Warehouse : IRMIN_DATA_STRUCTURE 
+  module IWarehouse : IRMIN_DATA_STRUCTURE 
     with type adt = Tpcc.Warehouse.t = 
   struct
 
@@ -124,7 +124,7 @@ struct
     include MakeVersionedDS(Config)(OM)(AO_value)
   end
 
-  module District: IRMIN_DATA_STRUCTURE 
+  module IDistrict: IRMIN_DATA_STRUCTURE 
     with type adt = Tpcc.District.t = 
   struct
 
@@ -155,7 +155,7 @@ struct
     include MakeVersionedDS(Config)(OM)(AO_value)
   end
 
-  module Order: IRMIN_DATA_STRUCTURE 
+  module IOrder: IRMIN_DATA_STRUCTURE 
     with type adt = Tpcc.Order.t = 
   struct
 
@@ -201,7 +201,7 @@ struct
     include MakeVersionedDS(Config)(OM)(AO_value)
   end
 
-  module NewOrder: IRMIN_DATA_STRUCTURE 
+  module INewOrder: IRMIN_DATA_STRUCTURE 
     with type adt = Tpcc.NewOrder.t = 
   struct
 
@@ -233,7 +233,7 @@ struct
     include MakeVersionedDS(Config)(OM)(AO_value)
   end
 
-  module OrderLine: IRMIN_DATA_STRUCTURE 
+  module IOrderLine: IRMIN_DATA_STRUCTURE 
     with type adt = Tpcc.OrderLine.t = 
   struct
 
@@ -288,7 +288,7 @@ struct
 
     include MakeVersionedDS(Config)(OM)(AO_value)
   end
-  module Item: IRMIN_DATA_STRUCTURE 
+  module IItem: IRMIN_DATA_STRUCTURE 
     with type adt = Tpcc.Item.t = 
   struct
 
@@ -319,7 +319,7 @@ struct
 
     include MakeVersionedDS(Config)(OM)(AO_value)
   end
-  module Hist: IRMIN_DATA_STRUCTURE 
+  module IHist: IRMIN_DATA_STRUCTURE 
     with type adt = Tpcc.Hist.t = 
   struct
 
@@ -365,7 +365,7 @@ struct
     include MakeVersionedDS(Config)(OM)(AO_value)
   end
 
-  module Stock: IRMIN_DATA_STRUCTURE 
+  module IStock: IRMIN_DATA_STRUCTURE 
     with type adt = Tpcc.Stock.t = 
   struct
 
@@ -408,7 +408,7 @@ struct
     include MakeVersionedDS(Config)(OM)(AO_value)
   end
 
-  module Customer: IRMIN_DATA_STRUCTURE 
+  module ICustomer: IRMIN_DATA_STRUCTURE 
     with type adt = Tpcc.Customer.t = 
   struct
 

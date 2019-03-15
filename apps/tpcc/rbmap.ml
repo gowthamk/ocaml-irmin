@@ -53,6 +53,7 @@ module type S =
     val empty: t
     val is_empty: t -> bool
     val add: key -> value -> t -> t
+    val insert: key -> value -> t -> t
     val find: key -> t -> value
     val remove: key -> t -> t
     val mem:  key -> t -> bool
@@ -62,6 +63,8 @@ module type S =
     val fold: (key -> value -> value -> value) -> t -> value -> value
     val compare: (value -> value -> int) -> t -> t -> int
     val equal: (value -> value -> bool) -> t -> t -> bool
+    val update : (key -> int) -> (value -> value) -> t -> t
+    val select: (key -> int) -> t -> value list
   end
 
 module Make(K:KEY)(V:VALUE) : S with type key=K.t and type value=V.t =
@@ -131,6 +134,8 @@ struct
             else
               Black(l, kx, x, r)
     in fst (blackify (add_aux m))
+
+  let insert = add
 
   let rec find k = function
     | Empty ->
@@ -291,4 +296,8 @@ struct
                 && cmp x1 x2
                 && equal_aux (enum r1 e1) (enum r2 e2))
     in equal_aux (enum m1 End) (enum m2 End)
+
+  let update sigf updf t = failwith "Unimpl."
+
+  let select sigf t = failwith "Unimpl"
 end
