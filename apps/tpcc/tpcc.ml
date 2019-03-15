@@ -4,6 +4,8 @@ module Id = struct
   let t = Irmin.Type.int64
 
   let compare = Int64.compare
+
+  let of_int = Int64.of_int
 end
 
 type id = Id.t
@@ -263,6 +265,37 @@ module Insert = struct
     let t' = HistTable.insert
        (r.h_w_id, (r.h_d_id, (r.h_c_w_id, (r.h_c_d_id, r.h_c_id)))) r t in
     ((),{db with hist_table=t'})
+
+  let item_table o db = 
+    let open Item in
+    let t = db.item_table in
+    let t'= ItemTable.insert (o.i_id) o t in
+        ((),{db with item_table=t'})
+
+  let warehouse_table o db = 
+    let open Warehouse in
+    let t = db.warehouse_table in
+    let t'= WarehouseTable.insert (o.w_id) o t in
+        ((),{db with warehouse_table=t'})
+
+  let district_table o db = 
+    let open District in
+    let t = db.district_table in
+    let t'= DistrictTable.insert (o.d_w_id, o.d_id) o t in
+        ((),{db with district_table=t'})
+
+  let customer_table o db = 
+    let open Customer in
+    let t = db.customer_table in
+    let t'= CustomerTable.insert (o.c_w_id, (o.c_d_id, o.c_id)) o t in
+        ((),{db with customer_table=t'})
+
+  let stock_table o db = 
+    let open Stock in
+    let t = db.stock_table in
+    let t'= StockTable.insert (o.s_w_id, o.s_i_id) o t in
+        ((),{db with stock_table=t'})
+
 end
 
 module Update = struct 
