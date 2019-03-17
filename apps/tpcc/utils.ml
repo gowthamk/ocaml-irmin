@@ -22,3 +22,6 @@ let fold f n b =
 
 let bounded_random_int32 x y = 
   Int32.add (Random.int32 (Int32.sub y x)) x
+
+let bounded_random_int x y =
+  (Random.int (y-x)) + x

@@ -34,6 +34,7 @@ module type KEY =
     type t
     val t: t Irmin.Type.t
     val compare: t -> t -> int
+    val to_string : t -> string
   end
 
 module type VALUE = 
@@ -143,8 +144,12 @@ struct
     | Red(l, kx, x, r)
     | Black(l, kx, x, r) ->
         let c = K.compare k kx in
-          if c < 0 then find k l
-          else if c > 0 then find k r
+          if c < 0 then 
+            ((*Printf.printf "%s < %s\n" (K.to_string k) 
+               (K.to_string kx);*) find k l)
+          else if c > 0 then 
+            ((*Printf.printf "%s > %s\n" (K.to_string k) 
+               (K.to_string kx);*) find k r)
           else x
 
   let unbalanced_left = function
@@ -297,7 +302,35 @@ struct
                 && equal_aux (enum r1 e1) (enum r2 e2))
     in equal_aux (enum m1 End) (enum m2 End)
 
-  let update sigf updf t = failwith "Unimpl."
+  let rec update sigf updf t = match t with
+    | Empty -> Empty
+    | Red(l, k, v, r) 
+      when sigf k > 0 -> Red(update sigf updf l, k, v, r)
+    | Black(l, k, v, r) 
+      when sigf k > 0 -> Black(update sigf updf l, k, v, r)
+    | Red(l, k, v, r) 
+      when sigf k < 0 -> Red(l, k, v, update sigf updf r)
+    | Black(l, k, v, r) 
+      when sigf k < 0 -> Black(l, k, v, update sigf updf r)
+    | Red(l, k, v, r) 
+      when sigf k = 0 -> Red(update sigf updf l, 
+                             k, updf v,
+                             update sigf updf r)
+    | Black(l, k, v, r) 
+      when sigf k = 0 -> Black(update sigf updf l, 
+                               k, updf v,
+                               update sigf updf r)
+    | _ -> failwith "Rbmap.update.exhaustiveness"
 
-  let select sigf t = failwith "Unimpl"
+  let rec select sigf t = match t with
+    | Empty -> []
+    | Red(l, k, v, r) | Black(l, k, v, r) 
+      when sigf k > 0 -> select sigf l
+    | Red(l, k, v, r) | Black(l, k, v, r) 
+      when sigf k < 0 -> select sigf r
+    | Red(l, k, v, r) 
+      when sigf k = 0 -> (select sigf l)@(v::(select sigf r))
+    | Black(l, k, v, r) 
+      when sigf k = 0 -> (select sigf l)@(v::(select sigf r))
+    | _ -> failwith "Rbmap.select.exhaustiveness"
 end

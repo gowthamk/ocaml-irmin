@@ -166,7 +166,7 @@ struct
       type adt = OM.t
       type t = OM.t
        
-    let t =
+      let t =
         let open Irmin.Type in
         let open Tpcc.Order in
         (((((((record "t"

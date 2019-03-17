@@ -3,9 +3,19 @@ module Id = struct
 
   let t = Irmin.Type.int64
 
+  let to_string : t -> string = 
+    Fmt.to_to_string (Irmin.Type.pp_json t)
+
   let compare = Int64.compare
 
   let of_int = Int64.of_int
+
+  let random ?x y = 
+    let x = match x with 
+      | Some x -> Int64.of_int x
+      | None -> 0L in
+    let y = Int64.of_int y in
+    Int64.add (Random.int64 (Int64.sub y x)) x
 end
 
 type id = Id.t
@@ -141,6 +151,9 @@ module IdPair = struct
 
   let t = let open Irmin.Type in pair id id
 
+  let to_string : t -> string = 
+    Fmt.to_to_string (Irmin.Type.pp_json t)
+
   let compare (x1,y1) (x2,y2) = 
     match Id.compare x1 x2, Id.compare y1 y2 with
       | 0, v2 -> v2
@@ -151,6 +164,9 @@ module IdTriple = struct
   type t = id*(id*id)
 
   let t = let open Irmin.Type in pair id (pair id id)
+
+  let to_string : t -> string = 
+    Fmt.to_to_string (Irmin.Type.pp_json t)
 
   let compare (x1,(y1,z1)) (x2,(y2,z2)) = 
     match Id.compare x1 x2, Id.compare y1 y2, Id.compare z1 z2 with
@@ -163,6 +179,9 @@ module IdQuad = struct
   type t = id*(id*(id*id))
 
   let t = let open Irmin.Type in pair id (pair id (pair id id))
+
+  let to_string : t -> string = 
+    Fmt.to_to_string (Irmin.Type.pp_json t)
 
   let compare (w1,(x1,(y1,z1))) (w2,(x2,(y2,z2))) = 
     match Id.compare w1 w2, Id.compare x1 x2, 
@@ -178,6 +197,9 @@ module IdQuin = struct
 
   let t = let open Irmin.Type in 
     (pair id (pair id (pair id (pair id id))))
+
+  let to_string : t -> string = 
+    Fmt.to_to_string (Irmin.Type.pp_json t)
 
   let compare (u1,(w1,(x1,(y1,z1)))) (u2, (w2,(x2,(y2,z2)))) = 
     match Id.compare u1 u2, Id.compare w1 w2, Id.compare x1 x2, 
@@ -338,35 +360,61 @@ module Delete = struct
 end
 
 module Select1 = struct
+  open Printf
+
   let warehouse_table x db =
-    let t = db.warehouse_table in
-    let res = WarehouseTable.find x t in
-    (res, db)
+    try
+      let t = db.warehouse_table in
+      let res = WarehouseTable.find x t in
+      (res, db)
+    with Not_found ->
+      failwith @@ sprintf "Warehouse<%s> not found"
+        (Id.to_string x)
 
   let district_table (x,y) db =
-    let t = db.district_table in
-    let res = DistrictTable.find (x,y) t in
-    (res, db)
+    try
+      let t = db.district_table in
+      let res = DistrictTable.find (x,y) t in
+      (res, db)
+    with Not_found ->
+      failwith @@ sprintf "District<%s> not found"
+        (IdPair.to_string (x,y))
 
   let item_table x db =
-    let t = db.item_table in
-    let res = ItemTable.find x t in
-    (res, db)
+    try
+      let t = db.item_table in
+      let res = ItemTable.find x t in
+      (res, db)
+    with Not_found ->
+      failwith @@ sprintf "Item<%s> not found"
+        (Id.to_string x)
 
   let order_table (x,y,z) db =
-    let t = db.order_table in
-    let res = OrderTable.find (x,(y,z)) t in
-    (res, db)
+    try
+      let t = db.order_table in
+      let res = OrderTable.find (x,(y,z)) t in
+      (res, db)
+    with Not_found ->
+      failwith @@ sprintf "Order<%s> not found"
+        (IdTriple.to_string (x,(y,z)))
 
   let stock_table (x,y) db =
-    let t = db.stock_table in
-    let res = StockTable.find (x,y) t in
-    (res, db)
+    try
+      let t = db.stock_table in
+      let res = StockTable.find (x,y) t in
+      (res, db)
+    with Not_found ->
+      failwith @@ sprintf "Stock<%s> not found"
+        (IdPair.to_string (x,y))
 
   let customer_table (x,y,z) db =
-    let t = db.customer_table in
-    let res = CustomerTable.find (x,(y,z)) t in
-    (res, db)
+    try
+      let t = db.customer_table in
+      let res = CustomerTable.find (x,(y,z)) t in
+      (res, db)
+    with Not_found ->
+      failwith @@ sprintf "Customer<%s> not found"
+        (IdTriple.to_string (x,(y,z)))
 end
 
 module Select = struct
@@ -416,13 +464,16 @@ module Select = struct
     (res, db)
 end
 
-let (+) = Int32.add
+module Temp = struct
+  let (+) = Int32.add
 
-let (-) = Int32.sub
+  let (-) = Int32.sub
 
-let ( * ) = Int32.mul
+  let ( * ) = Int32.mul
 
-let (>>=) = Txn.bind
+  let (>>=) = Txn.bind
+end
+open Temp
 
 open Warehouse
 open District
@@ -434,8 +485,23 @@ open Stock
 open Customer
 open Hist
 
-let new_order_txn w_id d_w_id d_id c_w_id c_d_id c_id
-      (ireqs: item_req list) : unit Txn.t  =
+open Printf
+
+let dump_stock_keys db = 
+  let fp = open_out "stock_keys.db" in
+  let dump2 k v = 
+    fprintf fp "%s\n" @@ IdPair.to_string k in
+  begin 
+    fprintf fp "\n> Stock\n";
+    StockTable.iter dump2 db.stock_table;
+    close_out fp;
+    printf "Dumped keys in stock_keys.db\n";
+    ((),db)
+  end
+
+let new_order_txn w_id d_id c_id (ireqs: item_req list) : unit Txn.t  =
+  let _ = printf "new_order_txn\n" in
+  let _ = flush_all () in
   let o_id = Random.int64 Int64.max_int in
   let ord = let open Order in
             {o_id=o_id; o_w_id=w_id; 
@@ -449,6 +515,7 @@ let new_order_txn w_id d_w_id d_id c_w_id c_d_id c_id
   List.fold_left
     (fun pre ireq -> 
        pre>>= fun () ->
+       (*dump_stock_keys >>= fun () ->*)
        Select1.stock_table (ireq._ol_supply_w_id, 
                             ireq._ol_i_id) >>= fun stk ->
        Select1.item_table ireq._ol_i_id >>= fun item ->
@@ -473,7 +540,12 @@ let new_order_txn w_id d_w_id d_id c_w_id c_d_id c_id
     (Txn.return ())
     ireqs
 
-let payment_txn w_id d_id d_w_id c_w_id c_d_id c_id h_amt = 
+let payment_txn w_id d_id c_id h_amt = 
+  let _ = printf "payment_txn\n" in
+  let _ = flush_all () in
+  let d_w_id = w_id in
+  let c_w_id = w_id in
+  let c_d_id = d_id in
   Select1.warehouse_table (w_id) >>= fun w ->
   Select1.district_table (d_w_id, d_id) >>= fun d ->
   Select1.customer_table (c_w_id, c_d_id, c_id) >>= fun c ->
@@ -498,6 +570,8 @@ let payment_txn w_id d_id d_w_id c_w_id c_d_id c_id h_amt =
 
 
 let delivery_txn w_id =
+  let _ = printf "delivery_txn\n" in
+  let _ = flush_all () in
   Select.district_table 
     (fun (dist_w_id,_) -> 
        Id.compare dist_w_id w_id) >>= fun dists ->

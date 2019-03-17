@@ -2,6 +2,14 @@ open Printf
 open Tpcc
 module U = Utils
 
+module List = struct 
+  include List
+
+ 	let init ~f n =
+    let rec aux i = if i = n then [] else f i :: aux (i+1) in
+		aux 0 
+end
+
 let _max_items = 1000
 let _max_ware = 3
 let _cust_per_dis = 300
@@ -22,12 +30,18 @@ let load_item i =
   let i_name= sprintf "item %d" i in
   let i_price = Random.int32 2000l in
   let item = {i_id; i_name; i_price} in
+  let _ = if (i+1) mod 100 = 0 then
+      (printf "Item %d loaded\n" (i+1); 
+       flush_all()) in
   Insert.item_table item
 
 let load_ware i =
   let open Warehouse in
   let w_id = Id.of_int i in
   let w_ytd = 300000l in
+  let _ = if (i+1) mod 100 = 0 then
+      (printf "Warehouse %d loaded\n" (i+1); 
+       flush_all()) in
   Insert.warehouse_table {w_id; w_ytd}
 
 let load_stock i j =
@@ -37,6 +51,9 @@ let load_stock i j =
   let s_qty = U.bounded_random_int32 10l 100l in
   let s_ytd = 0l in
   let s_order_cnt = 0l in
+  let _ = if (j+1) mod 100 = 0 then
+      (printf "Stock (%d,%d) loaded\n" (i+1) (j+1); 
+       flush_all()) in
   Insert.stock_table {s_w_id; s_i_id; s_qty;
                       s_ytd; s_order_cnt}
 
@@ -49,6 +66,9 @@ let load_cust i j k =
   let c_ytd_payment = 10l in
   let c_payment_cnt = 1l in
   let c_delivery_cnt = 0l in
+  let _ = if (k+1) mod 100 = 0 then
+      (printf "Customer (%d,%d,%d) loaded\n" (i+1) (j+1) (k+1); 
+       flush_all()) in
   Insert.customer_table {c_w_id; c_d_id; c_id;
                          c_bal; c_ytd_payment; 
                          c_payment_cnt; c_delivery_cnt}
@@ -58,6 +78,9 @@ let load_dist i j =
   let d_w_id = Id.of_int i in
   let d_id = Id.of_int j in
   let d_ytd = 3000l in
+  let _ = if (j+1) mod 100 = 0 then
+      (printf "District (%d,%d) loaded\n" (i+1) (j+1); 
+       flush_all ()) in
   Insert.district_table {d_w_id; d_id; d_ytd}
 
 let load_order i j k =
@@ -93,7 +116,10 @@ let load_order i j k =
                               ol_supply_w_id; ol_amt; ol_qty;
                               ol_delivery_d})
     (Int32.to_int o_ol_cnt)
-    (Txn.return ())
+    (Txn.return ()) >>= fun _ ->
+  Txn.return @@ if (k+1) mod 100 = 0 then
+    (printf "Order (%d,%d,%d) loaded\n" (i+1) (j+1) (k+1); 
+     flush_all ()) else ()
 
 let load_items () =
   U.fold (fun i pre -> pre >>= fun () -> 
@@ -138,12 +164,14 @@ let load_ord () =
     _max_ware (Txn.return ())
 
 let populate () = 
-	load_items() >>= fun _ ->
-	load_ware() >>= fun _ ->
-	load_stock() >>= fun _ ->
-	load_dist() >>= fun _ ->
-	load_cust() >>= fun _ ->
-  load_ord ()
+  begin 
+    load_items() >>= fun _ ->
+    load_ware() >>= fun _ ->
+    load_stock() >>= fun _ ->
+    load_dist() >>= fun _ ->
+    load_cust() >>= fun _ ->
+    load_ord ()
+  end
 
 let empty () =
   {warehouse_table= WarehouseTable.empty; 
@@ -156,3 +184,66 @@ let empty () =
    stock_table= StockTable.empty;
    customer_table= CustomerTable.empty}
 
+let do_new_order db = 
+  let w_id = Id.random _max_ware in
+  let d_id = Id.random _dist_per_ware in
+  (* TODO: change this is NURand, as described in TPC-C *)
+  let c_id = Id.random _cust_per_dis  in
+  let ol_cnt = U.bounded_random_int 5 15 in
+  let ireqs = List.init 
+      (fun i -> 
+        let _ol_num = Int32.of_int i in
+        let _ol_i_id = Id.random _max_items in
+        let _ol_supply_w_id = w_id in
+        let _ol_qty = U.bounded_random_int32 1l 11l in
+        {_ol_num; _ol_i_id; _ol_supply_w_id; _ol_qty}) 
+      ol_cnt in
+  snd @@ new_order_txn w_id d_id c_id ireqs db
+
+let do_payment db = 
+  let w_id = Id.random _max_ware in
+  let d_id = Id.random _dist_per_ware in
+  (* TODO: change this is NURand, as described in TPC-C *)
+  let c_id = Id.random _cust_per_dis  in
+  let h_amt = U.bounded_random_int32 1l 5001l in
+  snd @@ payment_txn w_id d_id c_id h_amt db
+
+let do_delivery db =
+  let w_id = Id.random _max_ware in
+  snd @@ delivery_txn w_id db
+
+let dump_keys db = 
+  let fp = open_out "keys.db" in
+  let dump1 k v = 
+    fprintf fp "%s\n" @@ Id.to_string k in
+  let dump2 k v = 
+    fprintf fp "%s\n" @@ IdPair.to_string k in
+  let dump3 k v = 
+    fprintf fp "%s\n" @@ IdTriple.to_string k in
+  let dump4 k v = 
+    fprintf fp "%s\n" @@ IdQuad.to_string k in
+  let dump5 k v = 
+    fprintf fp "%s\n" @@ IdQuin.to_string k in
+  begin 
+    fprintf fp "\n> Warehouse\n";
+    WarehouseTable.iter dump1 db.warehouse_table;
+    fprintf fp "\n> District\n";
+    DistrictTable.iter dump2 db.district_table;
+    fprintf fp "\n> Order\n";
+    OrderTable.iter dump3 db.order_table;
+    fprintf fp "\n> NewOrder\n";
+    NewOrderTable.iter dump3 db.neworder_table;
+    fprintf fp "\n> OrderLine\n";
+    OrderLineTable.iter dump4 db.orderline_table;
+    fprintf fp "\n> Item\n";
+    ItemTable.iter dump1 db.item_table;
+    fprintf fp "\n> Hist\n";
+    HistTable.iter dump5 db.hist_table;
+    fprintf fp "\n> Stock\n";
+    StockTable.iter dump2 db.stock_table;
+    fprintf fp "\n> Customer\n";
+    CustomerTable.iter dump3 db.customer_table;
+    close_out fp;
+    printf "Dumped keys in keys.db\n";
+  end
+  

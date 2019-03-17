@@ -126,63 +126,129 @@ struct
       T.add tree tag v >>= fun tree' ->
       Lwt.return (k,tree')
 
-  (*
-   * We can memoize the results of add_adt and read_adt for faster
-   * processing. add_adt can use physicaly equality on OM.t objects
-   * for faster lookups. read_adt memoization is straightforward.
-   *)
-  let rec add_adt : type a. (module MY_TREE with type t=a) ->
-           t -> adt -> (a -> (K.t*a) Lwt.t) =
-    fun  (module T) t (adt:adt) ->
-      let vtree = my_tree_to_v_tree (module T) in
-      let module Vtree = (val vtree : V_TREE with type t=T.t 
-                                              and type tag=T.tag) in
-      let add_to_store (v:my_t) = 
-        fun tr ->
-          add_and_link (module T:MY_TREE with type t = a) 
-                       t (Me v) tr >>= fun (k,tr') -> 
-          Lwt.return (k,tr') in
-      let of_vadt vadt = fun tr ->
-        V.of_adt (module Vtree: V_TREE with type t=T.t) vadt tr in
-      let add_adt = add_adt (module T:MY_TREE with type t = a) t in
-      (*
-       * We momentarily override Lwt's bind and return so as to pass
-       * the tree around without making a mess.
-       *)
-      let (>>=) m f = fun tr -> 
-        m tr >>= fun (k,tr') -> f k tr' in
-      begin 
-        match adt with
-         | OM.Black (lt,n,vadt,rt) -> 
-           (add_adt lt >>= fun lt' ->
-            add_adt rt >>= fun rt' ->
-            of_vadt vadt >>= fun v ->
-            add_to_store @@ Black (lt',(n,(v,rt'))))
-          | OM.Red (lt,n,vadt,rt) -> 
-           (add_adt lt >>= fun lt' ->
-            add_adt rt >>= fun rt' ->
-            of_vadt vadt >>= fun v ->
-            add_to_store @@ Red (lt',(n,(v,rt'))))
-         | OM.Empty -> add_to_store @@ Empty
-      end
 
-  let rec read_adt t (k:K.t) : adt Lwt.t =
-    find t k >>= fun aop ->
-    let to_vadt v = V.to_adt v in
-    let a = from_just aop "to_adt" in
-    (match a with
-      | Me (Black (lt, (n, (v, rt)))) ->
-        (read_adt t lt >>= fun lt' ->
-         read_adt t rt >>= fun rt' ->
-         to_vadt v >>= fun vadt ->
-         Lwt.return @@ OM.Black (lt', n, vadt, rt'))
-      | Me (Red (lt, (n, (v, rt)))) ->
-        (read_adt t lt >>= fun lt' ->
-         read_adt t rt >>= fun rt' ->
-         to_vadt v >>= fun vadt ->
-         Lwt.return @@ OM.Red (lt', n, vadt, rt'))
-      | Me Empty -> Lwt.return @@ OM.Empty
-      | Child _ -> failwith "read_adt.Exhaustiveness")
+    (*module PHashtbl = struct
+      include Hashtbl.Make(struct 
+        type t = adt
+
+        let addr (o:adt) : int64 = 
+          let _ = printf "magic enter\n" in
+          let _ = flush_all () in
+          let addr = Obj.magic o in
+          let _ = printf "magic exit\n" in
+          let _ = flush_all () in
+          addr
+
+        let equal x y = Int64.equal (addr x) (addr y)
+
+        let hash x = Hashtbl.hash (addr x)
+      end)
+
+      let find t key = 
+        let _ = printf "PHashtbl.find enter\n" in
+        let _ = flush_all () in
+        let v = find t key in
+        let _ = printf "PHashtbl.find exit\n" in
+        let _ = flush_all () in
+        v
+    end*)
+
+    let (read_cache: (K.t, adt) Hashtbl.t) = Hashtbl.create 131072
+
+    let (write_cache: (string, K.t) Hashtbl.t) = Hashtbl.create 131072
+        
+    let int64_addr (x:adt) :int64 = Obj.magic x
+
+    let string_addr (x:adt) : string = Obj.magic x
+
+    let rec thread_f () =
+      Lwt_io.printf "Cache sizes: %d (read), %d (write)\n" 
+        (Hashtbl.length read_cache) 
+        (Hashtbl.length write_cache) >>= fun _ ->
+      Lwt_unix.sleep 5.0 >>= fun () ->
+      thread_f ()
+
+    let _ = Lwt.async thread_f
+
+    let rec add_adt : type a. (module MY_TREE with type t=a) ->
+             t -> adt -> (a -> (K.t*a) Lwt.t) =
+      fun  (module T) t (adt:adt) ->
+        let vtree = my_tree_to_v_tree (module T) in
+        let module Vtree = (val vtree : V_TREE with type t=T.t 
+                                                and type tag=T.tag) in
+        let add_to_store (v:my_t) = 
+          fun tr ->
+            add_and_link (module T:MY_TREE with type t = a) 
+                         t (Me v) tr >>= fun (k,tr') -> 
+            Lwt.return (k,tr') in
+        let of_vadt vadt = fun tr ->
+          V.of_adt (module Vtree: V_TREE with type t=T.t) vadt tr in
+        let add_adt = add_adt (module T:MY_TREE with type t = a) t in
+        (*
+         * We momentarily override Lwt's bind and return so as to pass
+         * the tree around without making a mess.
+         *)
+        let (>>=) m f = fun tr -> 
+          m tr >>= fun (k,tr') -> f k tr' in
+        let return x = fun tr -> Lwt.return (x,tr) in
+        try
+          let k = Hashtbl.find write_cache (string_addr adt) in
+          let adt' = Hashtbl.find read_cache k in
+          if string_addr adt <> string_addr adt' 
+          then raise Not_found
+          else return k
+        with Not_found ->
+          begin match adt with
+           | OM.Black (lt,n,vadt,rt) -> 
+             (add_adt lt >>= fun lt' ->
+              add_adt rt >>= fun rt' ->
+              of_vadt vadt >>= fun v ->
+              add_to_store 
+                (Black (lt',(n,(v,rt')))) >>= fun k ->
+              Hashtbl.add write_cache (string_addr adt) k;
+              return k)
+            | OM.Red (lt,n,vadt,rt) -> 
+             (add_adt lt >>= fun lt' ->
+              add_adt rt >>= fun rt' ->
+              of_vadt vadt >>= fun v ->
+              add_to_store 
+                (Red (lt',(n,(v,rt')))) >>= fun k ->
+              Hashtbl.add write_cache (string_addr adt) k;
+              return k)
+           | OM.Empty -> 
+             (add_to_store Empty >>= fun k ->
+              Hashtbl.add write_cache (string_addr adt) k;
+              return k)
+        end
+
+    let rec read_adt t (k:K.t) : adt Lwt.t =
+      try 
+        Lwt.return @@ Hashtbl.find read_cache k
+      with Not_found -> begin 
+        find t k >>= fun aop ->
+        let to_vadt v = V.to_adt v in
+        let a = from_just aop "to_adt" in
+        (match a with
+          | Me (Black (lt, (n, (v, rt)))) ->
+            (read_adt t lt >>= fun lt' ->
+             read_adt t rt >>= fun rt' ->
+             to_vadt v >>= fun vadt ->
+             let adt = OM.Black (lt', n, vadt, rt') in
+             let _ = Hashtbl.add read_cache k adt in
+             Lwt.return adt)
+          | Me (Red (lt, (n, (v, rt)))) ->
+            (read_adt t lt >>= fun lt' ->
+             read_adt t rt >>= fun rt' ->
+             to_vadt v >>= fun vadt ->
+             let adt = OM.Red (lt', n, vadt, rt') in
+             let _ = Hashtbl.add read_cache k adt in
+             Lwt.return adt)
+          | Me Empty -> 
+            (let adt = OM.Empty in
+             let _ = Hashtbl.add read_cache k adt in
+             Lwt.return adt)
+          | Child _ -> failwith "read_adt.Exhaustiveness") 
+      end
 
     let find_or_fail t (k:K.t) : AO_value.t Lwt.t =
       find t k >>= fun vop ->
