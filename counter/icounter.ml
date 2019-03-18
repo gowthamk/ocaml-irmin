@@ -16,7 +16,7 @@ module MakeVersioned (Config: Config)  = struct
   let from_just = function (Some x) -> x
   | None -> failwith "Expected Some. Got None."
 
-  type vt = int64 
+  type vt = int64
 
 
   module M = struct
@@ -29,7 +29,7 @@ module MakeVersioned (Config: Config)  = struct
         | Some i -> Ok i
         | None -> Error (`Msg "invalid counter value")
     end
-    
+
     (* storage backhend: Append-only store *)
     module AO_store = struct
       (* Immutable collection of all versionedt *)
@@ -57,12 +57,12 @@ module MakeVersioned (Config: Config)  = struct
         | None -> Error (`Msg "invalid counter value")
 
     let of_adt (a:Counter.Make.t) : t Lwt.t  =
-      let aostore = AO_store.create () in 
-      let aostore_add value = 
-          aostore >>= (fun ao_store -> AO_store.add ao_store value) in 
+      let aostore = AO_store.create () in
+      let aostore_add value =
+          aostore >>= (fun ao_store -> AO_store.add ao_store value) in
           aostore_add =<< Lwt.return (Int64.of_int a)
 
-      let rec to_adt (k:t) : Counter.Make.t Lwt.t =
+      let to_adt (k:t) : Counter.Make.t Lwt.t =
       AO_store.create () >>= fun ao_store ->
       AO_store.find ao_store k >>= fun t ->
       let t = from_just t in
@@ -97,7 +97,7 @@ let merge = Irmin.Merge.(option (v t merge))
 
     type t = Store.t
 
-    let init ?root ?bare () =
+    let init ?root:_ ?bare:_ () =
       let config = Irmin_git.config Config.root in
       Store.Repo.v config
 
@@ -134,20 +134,20 @@ end = struct
                next_id  : int}
     type 'a t = st -> ('a * st) Lwt.t
 
-    let info s = Irmin_unix.info "[repo %s] %s" Config.root s  
+    let info s = Irmin_unix.info "[repo %s] %s" Config.root s
 
     let path = ["state"]
 
     let return (x : 'a) : 'a t = fun st -> Lwt.return (x,st)
 
-    let bind (m1: 'a t) (f: 'a -> 'b t) : 'b t = 
+    let bind (m1: 'a t) (f: 'a -> 'b t) : 'b t =
       fun st -> (m1 st >>= fun (a,st') -> f a st')
 
     let with_init_version_do (v: OM.t) (m: 'a t) =
-      Lwt_main.run 
+      Lwt_main.run
         begin
-          BC_store.init () >>= fun repo -> 
-          BC_store.master repo >>= fun m_br -> 
+          BC_store.init () >>= fun repo ->
+          BC_store.master repo >>= fun m_br ->
           M.of_adt v >>= fun k ->
           let cinfo = info "creating state of master" in
           BC_store.update m_br path k ~info:cinfo >>= fun () ->
@@ -156,15 +156,15 @@ end = struct
           m st >>= fun (a,_) -> Lwt.return a
         end
 
-    let with_init_forked_do (m: 'a t) = 
-      BC_store.init () >>= fun repo -> 
+    let with_init_forked_do (m: 'a t) =
+      BC_store.init () >>= fun repo ->
       BC_store.master repo >>= fun m_br ->
       BC_store.clone m_br "1_local" >>= fun t_br ->
       let st = {master=m_br; local=t_br; name="1"; next_id=1} in
       m st >>= fun (a, _) -> Lwt.return a
 
     let fork_version (m: 'a t) : unit t = fun (st: st) ->
-      let thread_f () = 
+      let thread_f () =
         let child_name = st.name^"_"^(string_of_int st.next_id) in
         let parent_m_br = st.master in
         (* Ideally, the following has to happen: *)
@@ -188,10 +188,10 @@ end = struct
       (* How do you commit the next version? Simply update path? *)
       (* 1. Commit to the local branch *)
       let cinfo = info "committing local state" in
-      (match v with 
+      (match v with
        | None -> Lwt.return ()
-       | Some v -> 
-         M.of_adt v >>= fun k -> 
+       | Some v ->
+         M.of_adt v >>= fun k ->
          BC_store.update st.local path k cinfo) >>= fun () ->
 
       (* 2.. Pull from remote to master *)
@@ -209,10 +209,10 @@ end = struct
       (* How do you commit the next version? Simply update path? *)
       (* 1. Commit to the local branch *)
       let cinfo = info "committing local state" in
-      (match v with 
+      (match v with
        | None -> Lwt.return ()
-       | Some v -> 
-         M.of_adt v >>= fun k -> 
+       | Some v ->
+         M.of_adt v >>= fun k ->
          BC_store.update st.local path k cinfo) >>= fun () ->
 
       (* 2. Merge local master to the local branch *)
@@ -225,6 +225,6 @@ end = struct
 
     let liftLwt (m: 'a Lwt.t) : 'a t = fun st ->
       m >>= fun a -> Lwt.return (a,st)
-end 
+end
 end
 

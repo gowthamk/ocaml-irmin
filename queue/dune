@@ -1,0 +1,8 @@
+(executables
+	(names test_queue fuzz_queue)
+	(libraries crowbar)
+	(preprocess (pps ppx_deriving_crowbar)))
+
+(alias
+  (name examples)
+	(deps fuzz_queue.exe test_queue.exe))

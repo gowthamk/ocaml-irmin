@@ -1,0 +1,17 @@
+opam-version: "2.0"
+version: "1.0"
+maintainer: "kc@kcsrk.info"
+authors: ["KC Sivaramakrishnan" "Gowtham Kaki"]
+homepage: "https://github.com/gowthamk/ocaml-irmin"
+bug-reports: "https://github.com/gowthamk/ocaml-irmin/issues"
+dev-repo: "git+https://github.com/gowthamk/ocaml-irmin.git"
+license: "MIT"
+build: [
+  ["dune" "build" "-p" name "-j" jobs]
+]
+depends: [
+  "dune" {build}
+	"irmin" {>= "1.4.0"}
+	"irmin-unix" {>= "1.3.3"}
+	"ppx_deriving_crowbar" {>= "0.1.1"}
+]

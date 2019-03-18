@@ -1,1 +1,1 @@
-ocamlfind ocamlopt counter.ml  icounter.ml test.ml -o counter -package ezjsonm,irmin-unix,irmin-http,lwt.unix -linkpkg -thread
+ocamlfind ocamlopt counter.ml  icounter.ml test_counter.ml -o counter -package ezjsonm,irmin-unix,irmin-http,lwt.unix -linkpkg -thread
