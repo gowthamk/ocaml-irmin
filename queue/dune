@@ -1,0 +1,6 @@
+(executable
+	(name test_queue))
+
+(alias
+  (name examples)
+	(deps test_queue.exe))
