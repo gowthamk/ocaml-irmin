@@ -1,0 +1,7 @@
+(executable
+	(name test_counter)
+	(libraries threads ezjsonm irmin-unix lwt.unix))
+
+(alias
+  (name examples)
+	(deps test_counter.exe))
