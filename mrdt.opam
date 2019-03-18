@@ -13,4 +13,5 @@ depends: [
   "dune" {build}
 	"irmin" {>= "1.4.0"}
 	"irmin-unix" {>= "1.3.3"}
+	"ppx_deriving_crowbar" {>= "0.1.1"}
 ]
