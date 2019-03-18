@@ -19,6 +19,7 @@ module type TAG_TREE = sig
   val tag_of_hash: K.t -> tag
   val empty: unit -> t
   val add: t -> tag -> value -> t Lwt.t
+  val set_prefix: string list -> unit
 end
 
 module type AO_STORE = sig

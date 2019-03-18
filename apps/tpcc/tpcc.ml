@@ -32,9 +32,11 @@ let counter_merge lca v1 v2 =
 
 let minf f l = 
   List.fold_left 
-    (fun acc x -> if Int64.compare (f x) (f acc) < 0 
-                  then x else acc)
-    (List.hd l) (List.tl l)
+    (fun acc x -> match acc with
+       | None -> Some x
+       | Some x' -> if Int64.compare (f x) (f x') < 0 
+                  then Some x else acc)
+    None l
 
 module Warehouse = struct
   type t = {w_id: id; w_ytd: int32}
@@ -502,7 +504,7 @@ let dump_stock_keys db =
 let new_order_txn w_id d_id c_id (ireqs: item_req list) : unit Txn.t  =
   let _ = printf "new_order_txn\n" in
   let _ = flush_all () in
-  let o_id = Random.int64 Int64.max_int in
+  let o_id = Random.int64 10000000000L in
   let ord = let open Order in
             {o_id=o_id; o_w_id=w_id; 
              o_d_id=d_id; o_c_id=c_id; 
@@ -582,32 +584,37 @@ let delivery_txn w_id =
          (fun (no_w_id, (no_d_id,_)) -> 
             IdPair.compare 
               (no_w_id, no_d_id) (w_id, d.d_id)) >>= fun nords ->
-       let no = minf (fun no -> no.no_o_id) nords in
-       (* delete the no entry *)
-       Delete.neworder_table
-         (no.no_w_id, no.no_d_id, no.no_o_id) >>= fun () ->
-       Select1.order_table (w_id, d.d_id, no.no_o_id) >>= fun o ->
-       Update.order_table
-         (fun okey -> IdTriple.compare okey
-                         (w_id, (d.d_id, no.no_o_id))) 
-         (fun o -> {o with o_carrier_id = true}) >>= fun () ->
-       Update.orderline_table
-         (fun (k_w_id, (k_d_id, (k_o_id, _))) -> 
-            IdTriple.compare (k_w_id, (k_d_id, k_o_id)) 
-                    (o.o_w_id, (o.o_d_id, o.o_id)))
-         (fun ol -> 
-            {ol with ol_delivery_d = 
-                       Some (Unix.time ())}) >>= fun () ->
-       Select.orderline_table
-        (fun (k_w_id, (k_d_id, (k_o_id, _))) -> 
-            IdTriple.compare (k_w_id, (k_d_id, k_o_id)) 
-                    (o.o_w_id, (o.o_d_id, o.o_id))) >>= fun ols ->
-       let amt = List.fold_left (fun acc ol -> 
-                                  acc + ol.ol_amt) 0l ols in
-       Update.customer_table
-        (fun ckey -> IdTriple.compare ckey
-                        (w_id, (d.d_id, o.o_c_id)))
-        (fun c -> 
-           {c with c_bal = c.c_bal + amt;
-                   c_delivery_cnt = c.c_delivery_cnt + 1l})) 
+       let nop = minf (fun no -> no.no_o_id) nords in
+       match nop with 
+         | Some no ->
+           begin 
+             (* delete the no entry *)
+             Delete.neworder_table
+               (no.no_w_id, no.no_d_id, no.no_o_id) >>= fun () ->
+             Select1.order_table (w_id, d.d_id, no.no_o_id) >>= fun o ->
+             Update.order_table
+               (fun okey -> IdTriple.compare okey
+                               (w_id, (d.d_id, no.no_o_id))) 
+               (fun o -> {o with o_carrier_id = true}) >>= fun () ->
+             Update.orderline_table
+               (fun (k_w_id, (k_d_id, (k_o_id, _))) -> 
+                  IdTriple.compare (k_w_id, (k_d_id, k_o_id)) 
+                          (o.o_w_id, (o.o_d_id, o.o_id)))
+               (fun ol -> 
+                  {ol with ol_delivery_d = 
+                             Some (Unix.time ())}) >>= fun () ->
+             Select.orderline_table
+              (fun (k_w_id, (k_d_id, (k_o_id, _))) -> 
+                  IdTriple.compare (k_w_id, (k_d_id, k_o_id)) 
+                          (o.o_w_id, (o.o_d_id, o.o_id))) >>= fun ols ->
+             let amt = List.fold_left (fun acc ol -> 
+                                        acc + ol.ol_amt) 0l ols in
+             Update.customer_table
+              (fun ckey -> IdTriple.compare ckey
+                              (w_id, (d.d_id, o.o_c_id)))
+              (fun c -> 
+                 {c with c_bal = c.c_bal + amt;
+                         c_delivery_cnt = c.c_delivery_cnt + 1l})
+           end
+         | None -> Txn.return ()) 
     (Txn.return ()) dists

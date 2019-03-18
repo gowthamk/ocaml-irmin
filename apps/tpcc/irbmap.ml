@@ -94,6 +94,7 @@ struct
           let tag_of_string = T.tag_of_string
           let tag_of_hash = T.tag_of_hash
           let empty = T.empty
+          let set_prefix = T.set_prefix
           let add t tag vt = 
             T.add t tag (Child vt)
         end in
@@ -165,7 +166,7 @@ struct
       Lwt_io.printf "Cache sizes: %d (read), %d (write)\n" 
         (Hashtbl.length read_cache) 
         (Hashtbl.length write_cache) >>= fun _ ->
-      Lwt_unix.sleep 5.0 >>= fun () ->
+      Lwt_unix.sleep 120.0 >>= fun () ->
       thread_f ()
 
     let _ = Lwt.async thread_f
@@ -456,6 +457,9 @@ struct
         let empty () = Store.Tree.empty
 
         let tag_of_string str = [str]
+
+        let set_prefix p = 
+          failwith "Irbmap.BC_store.Tree.set_prefix Unimpl."
 
         let tag_of_hash k = 
           let sha_str = Fmt.to_to_string Irmin.Hash.SHA1.pp k in

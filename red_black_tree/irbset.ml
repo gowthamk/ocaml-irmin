@@ -355,7 +355,12 @@ module MakeVersioned (Config: Config) (Atom : Rbset.ATOM)  = struct
           let fname_k = String.sub sha_str 0 10 in
             [fname_k]
 
-        let add t k v = Store.Tree.add t k v
+        let add t k v = 
+          Store.Tree.mem t k >>= fun b ->
+          let k_str = String.concat ";" k in
+          let _ = printf "Is %s present? %B\n" k_str b in
+          let _ = flush_all () in
+          Store.Tree.add t k v
       end
 
     let init ?root ?bare () =
