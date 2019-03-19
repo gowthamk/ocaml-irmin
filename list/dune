@@ -1,0 +1,8 @@
+(executables
+	(names fuzz_list)
+	(libraries crowbar irmin)
+	(preprocess (pps ppx_deriving_crowbar)))
+
+(alias
+  (name examples)
+	(deps fuzz_list.exe))
