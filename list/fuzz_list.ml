@@ -39,6 +39,15 @@ let lca_gen =
       )
     ])
 
+let pp_q ppf {left = _,l; right = _,r; lca = _,lca} =
+  pp ppf "lca = [";
+  List.iter (fun e -> pp ppf "%c; " e) lca;
+  pp ppf "], l = [";
+  List.iter (fun e -> pp ppf "%c; " e) l;
+  pp ppf "], r = [";
+  List.iter (fun e -> pp ppf "%c; " e) r;
+  pp ppf "]"
+
 let print_list l =
   print_string "[";
   List.iter (fun e -> print_string (String.make 1 e ^ "; ")) l;
