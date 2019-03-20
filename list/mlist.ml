@@ -37,69 +37,53 @@ module Make (Atom: ATOM)  = struct
 
   let (zt : (Atom.t,bool) Hashtbl.t) = Hashtbl.create 2017
 
+  let (removes : (Atom.t,bool) Hashtbl.t) = Hashtbl.create 2017
+
   let contains t a =
     (match Hashtbl.find_opt t a with
       | Some true -> true
       | Some false -> false
       | None -> false)
 
+  let removed a = contains removes a
+
+  let remove a = 
+    let _ = printf "Removing %s\n" (Atom.to_string a) in
+    Hashtbl.add removes a true
+
   let populate_table t l =
     List.iter (fun a -> Hashtbl.add t a true) l
 
+  let populate_removes xs = 
+    List.iter (fun x -> if contains yt x && contains zt x 
+                        then () else remove x) xs
   (*
    * IMPORTANT: merge assumes there are no duplicates
    *)
-  let rec merge_vertical xs ys yt =
-    match xs,ys with
-      | x::xs', y::ys'
-          when x=y -> x::(merge_vertical xs' ys' yt)
-      | x::xs', y::ys' -> if contains yt x
-                          then y::(merge_vertical xs ys' yt)
-                          else merge_vertical xs' ys yt
-      | [],_ -> ys
-      | _,[] -> []
+  let merge_time = ref 0.0
 
-  let rec merge_horizontal ys zs =
+  let rec two_way_merge ys zs = 
     match ys,zs with
       | y::ys', z::zs' ->
-          if y<z then y::z::(merge_horizontal ys' zs')
-          else z::y::(merge_horizontal ys' zs')
-      | [], _ -> zs
-      | _, [] -> ys
+          if y<=z then y::(two_way_merge ys' zs)
+          else z::(two_way_merge ys zs')
+      | [], _ -> List.filter (fun z -> not @@ removed z) zs
+      | _, [] -> List.filter (fun y -> not @@ removed y) ys
 
-  let rec merge xs ys zs =
-    match xs,ys,zs with
-      | x::xs', y::ys', z::zs'
-          when x=y && y=z -> x::(merge xs' ys' zs')
-      | x::xs', y::ys', z::zs'
-          when x=y -> if contains zt x
-                      then z::(merge xs ys zs')
-                      else merge xs' ys' zs
-      | x::xs', y::ys', z::zs'
-          when x=z -> if contains yt x
-                      then y::(merge xs ys' zs)
-                      else merge xs' ys zs'
-      | x::xs', y::ys', z:: zs' ->
-          if contains yt x && contains zt x
-          then if y<z then y::z::(merge xs ys' zs')
-               else z::y::(merge xs ys' zs')
-          else merge xs' ys zs
-      | [], _::_,_::_ | [], _::_, [] | [], [], _::_ -> merge_horizontal ys zs
-      | _::_, _::_, [] -> merge_vertical xs ys yt
-      | _::_,[],_::_ -> merge_vertical xs zs zt
-      | _,[],[] -> []
-
-  let merge_time = ref 0.0
 
   let merge xs ys zs =
     begin
 (*       let t1 = Sys.time () in *)
       populate_table yt ys;
       populate_table zt zs;
-      let v = merge xs ys zs in
+      populate_removes xs;
+      let ys' = List.filter (fun y -> not @@ removed y) ys in
+      let zs' = List.filter (fun z -> not @@ removed z) zs in
+      let v = two_way_merge ys' zs' in
 (*       let t2 = Sys.time () in *)
       Hashtbl.clear yt;
       Hashtbl.clear zt;
+      Hashtbl.clear removes;
 (*       merge_time := !merge_time +. (t2-.t1); *)
 (*       printf "Merge time: %fs\n" !merge_time; *)
 (*       flush_all(); *)
