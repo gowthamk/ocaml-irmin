@@ -11,6 +11,7 @@ module Atom = struct
 end
 
 module M = Mlist.Make(Atom)
+module S = Set.Make(Atom)
 
 open Crowbar
 
@@ -52,7 +53,7 @@ let triple_gen =
         | _ -> state)
     ])
 
-let pp_q ppf {left = l; right = r; lca = lca} =
+let pp_q ppf (_,_,{left = l; right = r; lca = lca}) =
   let f (seqno,c) = pp ppf "%s:%d; " (Int64.to_string seqno) (Char.code c) in
   pp ppf "lca = [";
   List.iter f lca;
@@ -68,10 +69,25 @@ let print_list l =
   List.iter f l;
   print_endline "]"
 
+let triple_gen = with_printer pp_q triple_gen
+
 let _ =
   add_test ~name:"commutativity" [triple_gen] (fun (_,_,{lca; left; right}) ->
 (*     print_endline "----"; *)
 (*     print_list lca; *)
 (*     print_list left; *)
 (*     print_list right; *)
-    check (M.merge lca left right = M.merge lca right left))
+    check (M.merge lca left right = M.merge lca right left));
+  add_test ~name:"membership" [triple_gen] (fun (_,_,{lca; left; right}) ->
+    print_endline "----";
+    print_list lca;
+    print_list left;
+    print_list right;
+    let merge = M.merge lca left right in
+    print_list merge;
+    let slca,sleft,sright = S.of_list lca, S.of_list left, S.of_list right in
+    let smerge = S.of_list merge in
+    let sadditions = S.union (S.diff sleft slca) (S.diff sright slca) in
+    let sdeletions = S.union (S.diff slca sleft) (S.diff slca sright) in
+    let smerge' = S.diff (S.union slca sadditions) sdeletions in
+    check (S.equal smerge smerge'))
