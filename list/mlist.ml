@@ -51,10 +51,7 @@ module Make (Atom: ATOM)  = struct
     List.iter (fun a -> Hashtbl.add t a true) l
 
   let populate_removes xs =
-    let remove a =
-      let _ = printf "Removing %s\n" (Atom.to_string a) in
-      Hashtbl.add removes a true
-    in
+    let remove a = Hashtbl.add removes a true in
     List.iter (fun x -> if contains yt x && contains zt x
                         then () else remove x) xs
   (*
@@ -78,7 +75,7 @@ module Make (Atom: ATOM)  = struct
       populate_table zt zs;
       populate_removes xs;
       let ys' = List.filter (fun y -> not @@ removed y) ys in
-      let zs' = List.filter 
+      let zs' = List.filter
           (fun z -> (not @@ removed z) && (not @@ contains yt z)) zs in
       let v = two_way_merge ys' zs' in
 (*       let t2 = Sys.time () in *)

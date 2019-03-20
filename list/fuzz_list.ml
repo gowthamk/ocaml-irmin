@@ -11,7 +11,6 @@ module Atom = struct
 end
 
 module M = Mlist.Make(Atom)
-module S = Set.Make(Atom)
 
 open Crowbar
 
@@ -73,9 +72,9 @@ let pp_q ppf (_,_,{left = l; right = r; lca = lca}) =
   List.iter f r;
   pp ppf "]"
 
-let print_list l =
+let print_list prefix l =
   let f (seqno,c) = Printf.printf "%s:%d; " (Int64.to_string seqno) (Char.code c) in
-  print_string "[";
+  print_string (prefix ^ "[");
   List.iter f l;
   print_endline "]"
 
@@ -83,21 +82,64 @@ let triple_gen = with_printer pp_q triple_gen
 
 let _ =
   add_test ~name:"commutativity" [triple_gen] (fun (_,_,{lca; left; right}) ->
-(*     print_endline "----"; *)
-(*     print_list lca; *)
-(*     print_list left; *)
-(*     print_list right; *)
-    check (M.merge lca left right = M.merge lca right left));
+    print_endline "----";
+    print_list "lca = " lca;
+    print_list "left = " left;
+    print_list "right = " right;
+    let m1 = M.merge lca left right in
+    print_list "m1 = " m1;
+    let m2 = M.merge lca right left in
+    print_list "m2 = " m2;
+    check ( m1 = m2 ))
+
+let verify_relational_property diff union subset relate lca left right merge =
+  let slca, sleft, sright, smerge =
+    relate lca, relate left, relate right, relate merge
+  in
+  let sadditions = union (diff sleft slca) (diff sright slca) in
+  let sdeletions = union (diff slca sleft) (diff slca sright) in
+  let smerge' = diff (union slca sadditions) sdeletions in
+  check (subset smerge' smerge)
+
+module S = Set.Make(Atom)
+
+let _ =
   add_test ~name:"membership" [triple_gen] (fun (_,_,{lca; left; right}) ->
     print_endline "----";
-    print_list lca;
-    print_list left;
-    print_list right;
+    print_list "lca = " lca;
+    print_list "left = " left;
+    print_list "right = " right;
     let merge = M.merge lca left right in
-    print_list merge;
-    let slca,sleft,sright = S.of_list lca, S.of_list left, S.of_list right in
+    print_list "merge = " merge;
+    verify_relational_property S.diff S.union S.subset S.of_list lca left right merge)
+
+let _ =
+  let module OB = Set.Make (struct
+    type t = Atom.t * Atom.t
+    let compare (x1,x2) (y1,y2) =
+      let r = Atom.compare x1 y1 in
+      if not (r = 0) then r else Atom.compare x2 y2
+    end)
+  in
+  let generate_ordered_before merge l =
     let smerge = S.of_list merge in
-    let sadditions = S.union (S.diff sleft slca) (S.diff sright slca) in
-    let sdeletions = S.union (S.diff slca sleft) (S.diff slca sright) in
-    let smerge' = S.diff (S.union slca sadditions) sdeletions in
-    check (S.equal smerge smerge'))
+    let rec loop = function
+      | [] -> OB.empty
+      | x::xs when S.mem x smerge ->
+          let s = List.fold_left (fun s e ->
+            if S.mem e smerge then OB.add (x,e) s else s) OB.empty xs
+          in
+          OB.union s (loop xs)
+      | _::xs -> loop xs
+    in
+    loop l
+  in
+  add_test ~name:"ordering" [triple_gen] (fun (_,_,{lca; left; right}) ->
+    print_endline "--ordering--";
+    print_list "lca = " lca;
+    print_list "left = " left;
+    print_list "right = " right;
+    let merge = M.merge lca left right in
+    print_list "merge = " merge;
+    verify_relational_property OB.diff OB.union OB.subset
+      (generate_ordered_before merge) lca left right merge)
