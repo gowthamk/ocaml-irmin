@@ -32,11 +32,8 @@ module Make (Atom: ATOM)  = struct
                         type t = Atom.t
                         let compare = Atom.compare`
                       end)*)
-
   let (yt : (Atom.t,bool) Hashtbl.t) = Hashtbl.create 2017
-
   let (zt : (Atom.t,bool) Hashtbl.t) = Hashtbl.create 2017
-
   let (removes : (Atom.t,bool) Hashtbl.t) = Hashtbl.create 2017
 
   let contains t a =
@@ -47,9 +44,7 @@ module Make (Atom: ATOM)  = struct
 
   let removed a = contains removes a
 
-  let remove a = 
-    let _ = printf "Removing %s\n" (Atom.to_string a) in
-    Hashtbl.add removes a true
+  let remove a = Hashtbl.add removes a true
 
   let populate_table t l =
     List.iter (fun a -> Hashtbl.add t a true) l
@@ -64,11 +59,14 @@ module Make (Atom: ATOM)  = struct
 
   let rec two_way_merge ys zs = 
     match ys,zs with
+      | y::ys', z::zs' when y=z -> y::(two_way_merge ys' zs')
+      | y::ys', z::zs' when contains zt y -> z::(two_way_merge ys zs')
+      | y::ys', z::zs' when contains yt z -> y::(two_way_merge ys' zs)
       | y::ys', z::zs' ->
-          if y<=z then y::(two_way_merge ys' zs)
-          else z::(two_way_merge ys zs')
-      | [], _ -> List.filter (fun z -> not @@ removed z) zs
-      | _, [] -> List.filter (fun y -> not @@ removed y) ys
+        if y<z then (y::(two_way_merge ys' zs))
+        else (z::(two_way_merge ys zs'))
+      | [], _ -> List.filter (fun z -> (not @@ removed z)) zs
+      | _, [] -> List.filter (fun y -> (not @@ removed y)) ys
 
 
   let merge xs ys zs =
@@ -78,8 +76,7 @@ module Make (Atom: ATOM)  = struct
       populate_table zt zs;
       populate_removes xs;
       let ys' = List.filter (fun y -> not @@ removed y) ys in
-      let zs' = List.filter 
-          (fun z -> (not @@ removed z) && (not @@ contains yt z)) zs in
+      let zs' = List.filter (fun z -> not @@ removed z) zs in
       let v = two_way_merge ys' zs' in
 (*       let t2 = Sys.time () in *)
       Hashtbl.clear yt;
