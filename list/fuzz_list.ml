@@ -36,20 +36,30 @@ let triple_gen =
         | _ -> state);
 
       (* Insert *)
-      map [uint8; triple_gen] (fun v state ->
+      map [uint8; int32; triple_gen] (fun v idx state ->
+        let insert l seqno =
+          let idx = abs (Int32.to_int idx) mod (List.length l + 1) in
+          M.insert l idx (Int64.of_int seqno, Char.chr v)
+        in
         match state with
         | LCA, seqno, ({lca;_} as d) ->
-            LCA, seqno+1, {d with lca = (Int64.of_int seqno, Char.chr v)::lca}
+            LCA, seqno+1, {d with lca = insert lca seqno}
         | Left, seqno, ({left;_} as d) ->
-            Left, seqno+1, {d with left = (Int64.of_int seqno, Char.chr v)::left}
+            Left, seqno+1, {d with left = insert left seqno}
         | Right, seqno, ({right;_} as d) ->
-            Right, seqno+1, {d with right = (Int64.of_int seqno, Char.chr v)::right});
+            Right, seqno+1, {d with right = insert right seqno});
 
-      (* Delete *)
-      map [triple_gen] (fun state ->
+      (* remove *)
+      map [int32; triple_gen] (fun idx state ->
+        let remove = function
+          | [] -> []
+          | l ->
+            let idx = abs (Int32.to_int idx) mod List.length l in
+            M.remove l idx
+        in
         match state with
-        | Left, seqno, ({left = _::xs;_} as d) -> Left, seqno, {d with left = xs}
-        | Right, seqno, ({right = _::xs;_} as d) -> Right, seqno, {d with right = xs}
+        | Left, seqno, ({left;_} as d) -> Left, seqno, {d with left = remove left}
+        | Right, seqno, ({right;_} as d) -> Right, seqno, {d with right = remove right}
         | _ -> state)
     ])
 

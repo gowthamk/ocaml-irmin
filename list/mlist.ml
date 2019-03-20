@@ -47,22 +47,22 @@ module Make (Atom: ATOM)  = struct
 
   let removed a = contains removes a
 
-  let remove a = 
-    let _ = printf "Removing %s\n" (Atom.to_string a) in
-    Hashtbl.add removes a true
-
   let populate_table t l =
     List.iter (fun a -> Hashtbl.add t a true) l
 
-  let populate_removes xs = 
-    List.iter (fun x -> if contains yt x && contains zt x 
+  let populate_removes xs =
+    let remove a =
+      let _ = printf "Removing %s\n" (Atom.to_string a) in
+      Hashtbl.add removes a true
+    in
+    List.iter (fun x -> if contains yt x && contains zt x
                         then () else remove x) xs
   (*
    * IMPORTANT: merge assumes there are no duplicates
    *)
   let merge_time = ref 0.0
 
-  let rec two_way_merge ys zs = 
+  let rec two_way_merge ys zs =
     match ys,zs with
       | y::ys', z::zs' ->
           if y<=z then y::(two_way_merge ys' zs)
