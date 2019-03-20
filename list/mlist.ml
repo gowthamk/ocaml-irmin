@@ -78,7 +78,8 @@ module Make (Atom: ATOM)  = struct
       populate_table zt zs;
       populate_removes xs;
       let ys' = List.filter (fun y -> not @@ removed y) ys in
-      let zs' = List.filter (fun z -> not @@ removed z) zs in
+      let zs' = List.filter 
+          (fun z -> (not @@ removed z) && (not @@ contains yt z)) zs in
       let v = two_way_merge ys' zs' in
 (*       let t2 = Sys.time () in *)
       Hashtbl.clear yt;
