@@ -82,36 +82,37 @@ let triple_gen = with_printer pp_q triple_gen
 
 let _ =
   add_test ~name:"commutativity" [triple_gen] (fun (_,_,{lca; left; right}) ->
-    print_endline "----";
-    print_list "lca = " lca;
-    print_list "left = " left;
-    print_list "right = " right;
+(*     print_endline "----"; *)
+(*     print_list "lca = " lca; *)
+(*     print_list "left = " left; *)
+(*     print_list "right = " right; *)
     let m1 = M.merge lca left right in
-    print_list "m1 = " m1;
+(*     print_list "m1 = " m1; *)
     let m2 = M.merge lca right left in
-    print_list "m2 = " m2;
+(*     print_list "m2 = " m2; *)
     check ( m1 = m2 ))
 
-let verify_relational_property diff union subset relate lca left right merge =
+let verify_relational_property predicate diff union relate lca left right merge =
   let slca, sleft, sright, smerge =
     relate lca, relate left, relate right, relate merge
   in
   let sadditions = union (diff sleft slca) (diff sright slca) in
   let sdeletions = union (diff slca sleft) (diff slca sright) in
   let smerge' = diff (union slca sadditions) sdeletions in
-  check (subset smerge' smerge)
+  check (predicate smerge' smerge)
 
 module S = Set.Make(Atom)
 
 let _ =
   add_test ~name:"membership" [triple_gen] (fun (_,_,{lca; left; right}) ->
-    print_endline "----";
-    print_list "lca = " lca;
-    print_list "left = " left;
-    print_list "right = " right;
+(*     print_endline "----"; *)
+(*     print_list "lca = " lca; *)
+(*     print_list "left = " left; *)
+(*     print_list "right = " right; *)
     let merge = M.merge lca left right in
-    print_list "merge = " merge;
-    verify_relational_property S.diff S.union S.subset S.of_list lca left right merge)
+(*     print_list "merge = " merge; *)
+    verify_relational_property S.equal S.diff S.union
+      S.of_list lca left right merge)
 
 let _ =
   let module OB = Set.Make (struct
@@ -135,11 +136,11 @@ let _ =
     loop l
   in
   add_test ~name:"ordering" [triple_gen] (fun (_,_,{lca; left; right}) ->
-    print_endline "--ordering--";
-    print_list "lca = " lca;
-    print_list "left = " left;
-    print_list "right = " right;
+(*     print_endline "--ordering--"; *)
+(*     print_list "lca = " lca; *)
+(*     print_list "left = " left; *)
+(*     print_list "right = " right; *)
     let merge = M.merge lca left right in
-    print_list "merge = " merge;
-    verify_relational_property OB.diff OB.union OB.subset
+(*     print_list "merge = " merge; *)
+    verify_relational_property OB.subset OB.diff OB.union
       (generate_ordered_before merge) lca left right merge)
