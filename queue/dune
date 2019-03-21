@@ -1,7 +1,6 @@
 (executables
 	(names test_queue fuzz_queue)
-	(libraries crowbar)
-	(preprocess (pps ppx_deriving_crowbar)))
+	(libraries crowbar))
 
 (alias
   (name examples)

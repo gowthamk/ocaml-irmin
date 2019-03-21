@@ -1,0 +1,3 @@
+no_r, no_op_r, merge_t, comp_t, sync_t, merge_c, real_merge_t,per_r_co,avg-merg,avg-merg2
+
+10,10,0.115372s,0.000282s,1.357019s,8,0.000289s,0.000009s,0.000010s,0.000036s
