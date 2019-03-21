@@ -7,7 +7,7 @@ sig
   type t
   val t: t Irmin.Type.t
   val compare: t -> t -> int
-  val to_string : t -> string   
+  val to_string : t -> string
   val of_string: string -> t
 end
 
@@ -214,13 +214,13 @@ struct
     | (t1, Empty) -> t1
     | (Node{l=l1; v=v1; r=r1; h=h1}, Node{l=l2; v=v2; r=r2; h=h2}) ->
       if h1 >= h2 then
-        if h2 = 1 then add v2 s1 
+        if h2 = 1 then add v2 s1
         else begin
           let (l2, _, r2) = split v1 s2 in
           join (union l1 l2) v1 (union r1 r2)
         end
       else
-      if h1 = 1 then add v1 s2 
+      if h1 = 1 then add v1 s2
       else begin
         let (l1, _, r1) = split v2 s1 in
         join (union l1 l2) v2 (union r1 r2)
@@ -478,7 +478,7 @@ struct
     | _ -> of_sorted_list (List.sort_uniq Atom.compare l)*)
 
   (* Patching *)
-  type edit = 
+  type edit =
     | Add of atom
     | Remove of atom
   type patch = edit list
@@ -492,7 +492,7 @@ struct
     let rec diff_avlt s1 s2 =
       match (s1, s2) with
       | (Empty, t2) -> fold (fun x y -> y @ [Add x]) t2 []
-      | (t1, Empty) -> fold (fun x y -> y @ [Remove x]) t1 []     
+      | (t1, Empty) -> fold (fun x y -> y @ [Remove x]) t1 []
       | (Node{l=l1; v=v1; r=r1; h=h1}, Node{l=l2; v=v2; r=r2; h=h2}) ->
         if h1 >= h2 then
           let (l2, p, r2) = split v1 s2 in
@@ -518,12 +518,12 @@ struct
       match xs, ys with
       | [], [] -> [], []
       | [], _ -> [], ys
-      | _, [] -> xs, []   
+      | _, [] -> xs, []
       | hx::rxs, hy::rys ->
         let handle kx ky on_conflict =
           let c = Atom.compare kx ky in
           if c = 0 then on_conflict ()
-          else if c < 0 then 
+          else if c < 0 then
             let a, b = transform_aux rxs ys in
             hx::a, b
           else (* c > 0 *)
@@ -534,7 +534,7 @@ struct
         | Remove x, Remove y ->
           let on_conflict () = transform_aux rxs rys in
           handle x y on_conflict
-        | Add x, Remove y 
+        | Add x, Remove y
         | Remove x, Add y ->
           (* Impossible condition *)
           let on_conflict = fun () -> assert false in
@@ -551,18 +551,18 @@ struct
     | Remove x::r -> let s' = remove x s in apply s' r
 
 
-    let print_set f s = 
-    let rec print_elements = function 
+    let print_set f s =
+    let rec print_elements = function
        Empty -> ()
-       | Node {l;v;r;h} -> print_elements l; print_string ";" ; f v; print_string ";" ; print_elements r; print_string ";" ; print_int h in 
+       | Node {l;v;r;h} -> print_elements l; print_string ";" ; f v; print_string ";" ; print_elements r; print_string ";" ; print_int h in
        print_string "{" ;
        print_elements s ;
-       print_string "}"  
+       print_string "}"
 
-  
+
   let merge3 ~ancestor l r =
     let p = op_diff ancestor l in
     let q = op_diff ancestor r in
     let _,q' = op_transform p q in
     apply l q'
-end 
+end
