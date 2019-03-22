@@ -1,2 +1,7 @@
 *~
 _build
+*.cmo
+*.cmx
+*.cmi
+*.o
+*.out

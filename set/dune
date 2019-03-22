@@ -1,7 +1,0 @@
-(executables
-	(names fuzz_set)
-	(libraries irmin crowbar))
-
-(alias
-  (name examples)
-	(deps fuzz_set.exe))
