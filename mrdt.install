@@ -1,0 +1,11 @@
+lib: [
+  "_build/install/default/lib/mrdt/META" {"META"}
+  "_build/install/default/lib/mrdt/dune-package" {"dune-package"}
+  "_build/install/default/lib/mrdt/opam" {"opam"}
+]
+bin: [
+  "_build/install/default/bin/counter" {"counter"}
+]
+doc: [
+  "_build/install/default/doc/mrdt/README.md"
+]
