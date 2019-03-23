@@ -15,7 +15,6 @@ B /home/kc/.opam/4.07.1+afl/lib/ocaml
 B /home/kc/.opam/4.07.1+afl/lib/ocamlgraph
 B /home/kc/.opam/4.07.1+afl/lib/ocplib-endian
 B /home/kc/.opam/4.07.1+afl/lib/parsexp
-B /home/kc/.opam/4.07.1+afl/lib/ppx_deriving
 B /home/kc/.opam/4.07.1+afl/lib/re
 B /home/kc/.opam/4.07.1+afl/lib/re/posix
 B /home/kc/.opam/4.07.1+afl/lib/result
@@ -43,7 +42,6 @@ S /home/kc/.opam/4.07.1+afl/lib/ocaml
 S /home/kc/.opam/4.07.1+afl/lib/ocamlgraph
 S /home/kc/.opam/4.07.1+afl/lib/ocplib-endian
 S /home/kc/.opam/4.07.1+afl/lib/parsexp
-S /home/kc/.opam/4.07.1+afl/lib/ppx_deriving
 S /home/kc/.opam/4.07.1+afl/lib/re
 S /home/kc/.opam/4.07.1+afl/lib/re/posix
 S /home/kc/.opam/4.07.1+afl/lib/result
@@ -55,5 +53,4 @@ S /home/kc/.opam/4.07.1+afl/lib/uchar
 S /home/kc/.opam/4.07.1+afl/lib/uri
 S /home/kc/.opam/4.07.1+afl/lib/uutf
 S .
-FLG -ppx '/home/kc/repos/ocaml-irmin/_build/default/.ppx/e0ab213505948e0f14c2c9f5d3ff2ec1/ppx.exe --as-ppx'
 FLG -w @a-4-29-40-41-42-44-45-48-58-59-60-40 -strict-sequence -strict-formats -short-paths -keep-locs -warn-error -A
