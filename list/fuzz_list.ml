@@ -165,14 +165,8 @@ let quint_gen = with_printer pp_q quint_gen
 let _ =
   add_test ~name:"commutativity" [triple_gen]
     (fun (_, _, {lca; left; right}) ->
-      (*     print_endline "----"; *)
-      (*     print_list "lca = " lca; *)
-      (*     print_list "left = " left; *)
-      (*     print_list "right = " right; *)
       let m1 = M.merge lca left right in
-      (*     print_list "m1 = " m1; *)
       let m2 = M.merge lca right left in
-      (*     print_list "m2 = " m2; *)
       check (m1 = m2) )
 
 let _ =
@@ -180,13 +174,13 @@ let _ =
     (fun (_,_,{lca1; a; lca2; b; c}) ->
       (* lca1 = LCA(a,lca2) && lca2 = LCA(b,c) *)
       let mx = M.merge lca1 a b in
-      print_list "mx = " mx;
-      let m1 = M.merge lca1 mx c in
-      print_list "m1 = " m1;
+(*       print_list "mx = " mx; *)
+      let m1 = M.merge lca2 mx c in
+(*       print_list "m1 = " m1; *)
       let my = M.merge lca2 b c in
-      print_list "my = " my;
+(*       print_list "my = " my; *)
       let m2 = M.merge lca1 a my in
-      print_list "m2 = " m2;
+(*       print_list "m2 = " m2; *)
       check (m1 = m2))
 
 let _ =
